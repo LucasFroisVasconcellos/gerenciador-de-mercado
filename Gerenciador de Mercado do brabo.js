@@ -1,3 +1,4 @@
+// Versão 1.2.5 — última atualização em 2025-09-09T12:11:47Z
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
