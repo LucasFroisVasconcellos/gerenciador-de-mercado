@@ -1,10 +1,10 @@
-// Versão 1.0.2 — última atualização em 2025-09-11T16:17:55Z
-// Versão Corrigida por Eva em 2025-09-11
+// Versão 1.0.3 — última atualização em 2025-09-11T16:21:48Z
+// Versão Corrigida por Eva em 2025-09-11 (Aplicado na base do usuário)
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois
-// @version      5.6
+// @version      5.7
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -15,21 +15,14 @@
     //  1. CONFIGURAÇÕES E ESTADO INICIAL
     // =======================================================================
 
-    // Objeto para guardar as configurações padrão
     const defaultConfig = {
         wood: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         stone: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         iron: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
-        global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null, last_buy_index: 0 }
+        global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null }
     };
 
-    // Carrega as configurações ou usa o padrão
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
-
-    // Garante que configurações antigas recebam o novo parâmetro
-    if (settings.global.last_buy_index === undefined) {
-        settings.global.last_buy_index = 0;
-    }
 
     createUI();
     setupEventListeners();
@@ -39,7 +32,7 @@
     // =======================================================================
     setInterval(sellResource, 7000);
     setInterval(buyResource, 8500);
-    setInterval(() => { window.location.reload(); }, 300000); // Recarrega a cada 5 minutos
+    setInterval(() => { window.location.reload(); }, 300000);
 
     // =======================================================================
     //  3. CRIAÇÃO DA INTERFACE (UI)
@@ -181,7 +174,7 @@
             alert('Venda desativada e salva para todos os recursos!');
         });
 
-        // NOVO: Adicionado aviso de orçamento
+        // ALTERADO: Lógica do botão "Ligar Compra" para incluir o aviso de orçamento
         document.getElementById('btnLigarCompra').addEventListener('click', () => {
             let isTryingToBuy = false;
             resources.forEach(res => {
@@ -302,15 +295,11 @@
         }
     }
 
-    // ================================================================
-    //  FUNÇÃO DE COMPRA ALTERADA PARA SER PREDITIVA COM O ORÇAMENTO
-    // ================================================================
+    // ALTERADO: Função de compra para incluir a verificação PREDITIVA do orçamento
     function buyResource() {
-        // Sai imediatamente se o orçamento não estiver ativo.
         if (!settings.global.budget_on) return;
 
         let currentPP = parseInt(document.getElementById("premium_points").innerText);
-        // Verificação primária: se já estourou o limite, desliga e para.
         if (settings.global.pp_stop && currentPP <= settings.global.pp_stop) {
             document.getElementById("btnDesligarBudget").click();
             return;
@@ -318,14 +307,9 @@
 
         const allResInfo = getResInfo();
         const maxStorage = parseInt(document.getElementById("storage").innerText);
-        const resourceOrder = ['wood', 'stone', 'iron'];
-        let startIndex = settings.global.last_buy_index || 0;
 
-        for (let i = 0; i < resourceOrder.length; i++) {
-            let currentIndex = (startIndex + i) % resourceOrder.length;
-            const resName = resourceOrder[currentIndex];
+        for (const resName of ['wood', 'stone', 'iron']) {
             const resConfig = settings[resName];
-
             if (!resConfig.buy_on) continue;
 
             const resData = allResInfo[resName];
@@ -336,26 +320,19 @@
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
 
                 if (buyThis >= resConfig.buy_min_q) {
-                    // ALTERADO: Verificação preditiva do custo em PP
-                    // Usa a função interna do jogo para calcular o custo com precisão.
+                    // NOVO: Verificação preditiva do custo em PP para não estourar o orçamento
                     if (typeof PremiumExchange === 'object' && typeof PremiumExchange.calculateCosts === 'function') {
                         const cost = PremiumExchange.calculateCosts(resName, buyThis).pp;
                         if ((currentPP - cost) < settings.global.pp_stop) {
-                            continue; // Esta compra ultrapassaria o orçamento. Pula para o próximo recurso.
+                            continue; // Esta compra ultrapassaria o orçamento. Tenta o próximo recurso.
                         }
                     }
 
-                    settings.global.last_buy_index = (currentIndex + 1) % resourceOrder.length;
-                    localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-
                     performTransaction('buy', resName, buyThis);
-                    return;
+                    return; // Sai após a primeira transação bem-sucedida
                 }
             }
         }
-
-        settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
-        localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
 
 })();
