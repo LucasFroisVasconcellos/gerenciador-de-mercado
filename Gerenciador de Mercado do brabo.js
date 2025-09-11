@@ -1,10 +1,10 @@
-// Versão 1.0.3 — última atualização em 2025-09-11T16:21:48Z
-// Versão Corrigida por Eva em 2025-09-11 (Aplicado na base do usuário)
+// Versão 1.0.4 — última atualização em 2025-09-11T16:38:11Z
+// Versão Corrigida por Eva em 2025-09-11
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois
-// @version      5.7
+// @version      5.6
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -15,14 +15,22 @@
     //  1. CONFIGURAÇÕES E ESTADO INICIAL
     // =======================================================================
 
+    // Objeto para guardar as configurações padrão
     const defaultConfig = {
         wood: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         stone: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         iron: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
-        global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null }
+        global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null, last_buy_index: 0 }
     };
 
+    // Carrega as configurações ou usa o padrão
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
+
+    // Garante que configurações antigas recebam o novo parâmetro
+    if (settings.global.last_buy_index === undefined) {
+        settings.global.last_buy_index = 0;
+    }
+
 
     createUI();
     setupEventListeners();
@@ -32,7 +40,7 @@
     // =======================================================================
     setInterval(sellResource, 7000);
     setInterval(buyResource, 8500);
-    setInterval(() => { window.location.reload(); }, 300000);
+    setInterval(() => { window.location.reload(); }, 300000); // Recarrega a cada 5 minutos
 
     // =======================================================================
     //  3. CRIAÇÃO DA INTERFACE (UI)
@@ -174,22 +182,20 @@
             alert('Venda desativada e salva para todos os recursos!');
         });
 
-        // ALTERADO: Lógica do botão "Ligar Compra" para incluir o aviso de orçamento
         document.getElementById('btnLigarCompra').addEventListener('click', () => {
-            let isTryingToBuy = false;
+            // NOVO: Adiciona um aviso se o orçamento não estiver ligado
+            if (!settings.global.budget_on) {
+                const someBuyIsOn = resources.some(res => document.getElementById(`buy_on_${res}`).checked);
+                if (someBuyIsOn) {
+                    alert("Atenção: A compra automática só funcionará se o Orçamento Global estiver LIGADO. Por favor, ative o orçamento.");
+                }
+            }
+
             resources.forEach(res => {
                 const isChecked = document.getElementById(`buy_on_${res}`).checked;
-                if(isChecked) {
-                    isTryingToBuy = true;
-                }
                 settings[res].buy_on = isChecked;
                 updateStatusDisplay('buy', res, isChecked);
             });
-
-            if(isTryingToBuy && !settings.global.budget_on) {
-                alert('Atenção: Para a compra automática funcionar, o Orçamento precisa estar ligado. Por favor, ative o orçamento.');
-            }
-
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             alert('Status de Compra salvo conforme selecionado!');
         });
@@ -204,6 +210,7 @@
             alert('Compra desativada e salva para todos os recursos!');
         });
 
+
         document.getElementById('btnLigarBudget').addEventListener('click', () => {
             let currentPP = parseInt(document.getElementById("premium_points").innerText);
             let budgetPercent = parseInt(document.getElementById('global_budget_percent').value) || settings.global.budget_percent;
@@ -216,7 +223,7 @@
             settings.global.pp_start = currentPP;
             settings.global.pp_stop = currentPP - ppToSpend;
             settings.global.budget_on = true;
-            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
+            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings)); // Salva o estado do orçamento
             updateBudgetDisplay();
         });
 
@@ -224,7 +231,7 @@
             settings.global.budget_on = false;
             settings.global.pp_start = null;
             settings.global.pp_stop = null;
-            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
+            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings)); // Salva o estado do orçamento
             updateBudgetDisplay();
         });
     }
@@ -250,7 +257,7 @@
 
     function getResInfo() {
         const resources = {};
-        ['wood', 'stone', 'iron'].forEach((res) => {
+        ['wood', 'stone', 'iron'].forEach((res, index) => {
             resources[res] = {
                 price: parseInt(document.getElementById(`premium_exchange_rate_${res}`).children[0].innerText),
                 inVillage: parseInt(document.getElementById(res).innerText),
@@ -270,6 +277,7 @@
         }, 1200);
     }
 
+
     // =======================================================================
     //  6. LÓGICA DE VENDA E COMPRA
     // =======================================================================
@@ -285,21 +293,28 @@
             const resData = allResInfo[resName];
             let surplus = resData.inVillage - resConfig.sell_res_cap;
 
+            // ===== LÓGICA DE VENDA CORRIGIDA =====
+            // A venda só ocorre se o excedente for MAIOR OU IGUAL à base de venda (packet_size)
             if (surplus >= resConfig.packet_size && resData.price <= resConfig.sell_rate_cap) {
+                // A quantidade a vender é exatamente a base de venda configurada.
                 let amountToSell = resConfig.packet_size;
                 if (amountToSell > 0) {
                     performTransaction('sell', resName, amountToSell);
-                    return;
+                    return; // Sai após iniciar uma transação
                 }
             }
         }
     }
 
-    // ALTERADO: Função de compra para incluir a verificação PREDITIVA do orçamento
+    // ================================================================
+    //  FUNÇÃO DE COMPRA COM VERIFICAÇÃO DE ORÇAMENTO CORRIGIDA
+    // ================================================================
     function buyResource() {
+        // Checagem inicial se o orçamento está ligado
         if (!settings.global.budget_on) return;
 
         let currentPP = parseInt(document.getElementById("premium_points").innerText);
+        // Checagem inicial se o orçamento já foi atingido
         if (settings.global.pp_stop && currentPP <= settings.global.pp_stop) {
             document.getElementById("btnDesligarBudget").click();
             return;
@@ -307,9 +322,14 @@
 
         const allResInfo = getResInfo();
         const maxStorage = parseInt(document.getElementById("storage").innerText);
+        const resourceOrder = ['wood', 'stone', 'iron'];
+        let startIndex = settings.global.last_buy_index || 0;
 
-        for (const resName of ['wood', 'stone', 'iron']) {
+        for (let i = 0; i < resourceOrder.length; i++) {
+            let currentIndex = (startIndex + i) % resourceOrder.length;
+            const resName = resourceOrder[currentIndex];
             const resConfig = settings[resName];
+
             if (!resConfig.buy_on) continue;
 
             const resData = allResInfo[resName];
@@ -320,19 +340,34 @@
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
 
                 if (buyThis >= resConfig.buy_min_q) {
-                    // NOVO: Verificação preditiva do custo em PP para não estourar o orçamento
-                    if (typeof PremiumExchange === 'object' && typeof PremiumExchange.calculateCosts === 'function') {
-                        const cost = PremiumExchange.calculateCosts(resName, buyThis).pp;
-                        if ((currentPP - cost) < settings.global.pp_stop) {
-                            continue; // Esta compra ultrapassaria o orçamento. Tenta o próximo recurso.
-                        }
-                    }
+                    // =================================================================
+                    //  NOVA VERIFICAÇÃO DE ORÇAMENTO ANTES DE CADA COMPRA
+                    // =================================================================
+                    // Calcula o custo em PP da transação. O preço é 'recursos por 1 PP'.
+                    // Math.ceil arredonda para cima para garantir que não gastemos mais do que o previsto.
+                    let transactionCost = Math.ceil(buyThis / resData.price);
 
-                    performTransaction('buy', resName, buyThis);
-                    return; // Sai após a primeira transação bem-sucedida
+                    // Verifica se a compra não ultrapassará o orçamento
+                    if ((currentPP - transactionCost) >= settings.global.pp_stop) {
+                        // Se a compra for válida, define o próximo recurso e executa a transação
+                        settings.global.last_buy_index = (currentIndex + 1) % resourceOrder.length;
+                        localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
+
+                        performTransaction('buy', resName, buyThis);
+                        return; // Sai após iniciar uma transação para esperar o próximo ciclo
+                    } else {
+                        // Se a compra for exceder o limite, desliga o orçamento e para a execução.
+                        console.log("Orçamento excederia com esta compra. Desligando a compra automática.");
+                        document.getElementById("btnDesligarBudget").click();
+                        return;
+                    }
                 }
             }
         }
+
+        // Se o loop terminar sem compras, atualiza o índice para recomeçar do início no próximo ciclo
+        settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
+        localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
 
 })();
