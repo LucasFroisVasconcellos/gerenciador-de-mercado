@@ -1,9 +1,10 @@
-// Versão 1.2.5 — última atualização em 2025-09-09T12:11:47Z
+// Versão 1.0.1 — última atualização em 2025-09-11T16:01:49Z
+// Versão Corrigida por Eva em 2025-09-11
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois
-// @version      5.4
+// @version      5.5
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -19,11 +20,17 @@
         wood: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         stone: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         iron: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
-        global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null }
+        global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null, last_buy_index: 0 } // NOVO: Adicionado last_buy_index
     };
 
     // Carrega as configurações ou usa o padrão
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
+
+    // NOVO: Garante que configurações antigas recebam o novo parâmetro
+    if (settings.global.last_buy_index === undefined) {
+        settings.global.last_buy_index = 0;
+    }
+
 
     createUI();
     setupEventListeners();
@@ -291,6 +298,9 @@
         }
     }
 
+    // ================================================================
+    //  FUNÇÃO DE COMPRA ALTERADA PARA INCLUIR ROTATIVIDADE
+    // ================================================================
     function buyResource() {
         if (!settings.global.budget_on) return;
 
@@ -302,9 +312,16 @@
 
         const allResInfo = getResInfo();
         const maxStorage = parseInt(document.getElementById("storage").innerText);
+        const resourceOrder = ['wood', 'stone', 'iron'];
+        let startIndex = settings.global.last_buy_index || 0;
 
-        for (const resName of ['wood', 'stone', 'iron']) {
+        // Loop que percorre os recursos a partir do último verificado
+        for (let i = 0; i < resourceOrder.length; i++) {
+            let currentIndex = (startIndex + i) % resourceOrder.length;
+            const resName = resourceOrder[currentIndex];
             const resConfig = settings[resName];
+
+            // Pula se a compra deste recurso estiver desligada
             if (!resConfig.buy_on) continue;
 
             const resData = allResInfo[resName];
@@ -313,12 +330,22 @@
 
             if (resData.price >= resConfig.buy_rate && buyableAmount >= resConfig.buy_min_q) {
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
+                
                 if (buyThis >= resConfig.buy_min_q) {
+                    // Define o próximo recurso a ser verificado no próximo ciclo
+                    settings.global.last_buy_index = (currentIndex + 1) % resourceOrder.length;
+                    localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
+
                     performTransaction('buy', resName, buyThis);
-                    return; // Sai após iniciar uma transação
+                    return; // Sai após iniciar uma transação para esperar o próximo ciclo
                 }
             }
         }
+
+        // Se o loop terminar sem compras, atualiza o índice para recomeçar do início no próximo ciclo
+        // Isso evita ficar preso verificando um recurso que nunca está disponível
+        settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
+        localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
 
 })();
