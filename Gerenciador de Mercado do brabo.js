@@ -1,10 +1,10 @@
-// Versão 1.0.5 — última atualização em 2025-09-12T14:01:33Z
-// Versão Corrigida por Eva em 2025-09-12 com detecção de CAPTCHA e parada total
+// Versão 1.0.6 — última atualização em 2025-09-12T14:09:16Z
+// Versão Corrigida por Eva com detecção de CAPTCHA e aviso de mudança de taxa
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois
-// @version      5.7
+// @version      5.8
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -28,7 +28,6 @@
         settings.global.last_buy_index = 0;
     }
     
-    // NOVO: Variáveis para guardar os IDs dos timers para que possam ser pausados
     let sellInterval, buyInterval, reloadInterval;
     let isScriptPaused = false;
 
@@ -38,7 +37,6 @@
     // =======================================================================
     //  2. LOOPS PRINCIPAIS (TIMERS)
     // =======================================================================
-    // MODIFICADO: Armazena os timers em variáveis para permitir a parada completa
     sellInterval = setInterval(sellResource, 8000);
     buyInterval = setInterval(buyResource, 9500);
     reloadInterval = setInterval(() => { if (!isScriptPaused) window.location.reload(); }, 300000);
@@ -267,17 +265,36 @@
         return resources;
     }
 
+    // =============================================================================================
+    // MODIFICADO: Função 'performTransaction' com lógica para lidar com a mudança na taxa de troca
+    // =============================================================================================
     function performTransaction(type, resource, amount) {
         document.querySelectorAll(`input.premium-exchange-input[data-type="${type}"]`).forEach(el => el.value = "");
         document.querySelector(`input.premium-exchange-input[name="${type}_${resource}"]`).value = Math.floor(amount);
         document.getElementsByClassName("btn-premium-exchange-buy")[0].click();
+
+        // Aumentei o tempo para 2 segundos para dar mais margem para o popup de confirmação carregar
         setTimeout(() => {
-            const confirmButton = document.querySelector(".btn-confirm-yes");
-            if (confirmButton) confirmButton.click();
-        }, 1200);
+            // Verifica se o aviso de "taxa de troca mudou" está visível
+            const warningElement = document.querySelector('#premium_exchange td.warn');
+            
+            if (warningElement && warningElement.offsetParent !== null && warningElement.textContent.includes('A taxa de troca mudou')) {
+                // Se o aviso aparecer, o script clica em "Cancelar"
+                console.log("A taxa de troca mudou. Cancelando a transação para tentar novamente no próximo ciclo.");
+                const cancelButton = document.querySelector('.btn.evt-cancel-btn-confirm-no');
+                if (cancelButton) {
+                    cancelButton.click();
+                }
+            } else {
+                // Caso contrário (sem aviso), o script prossegue com a confirmação normal
+                const confirmButton = document.querySelector(".btn-confirm-yes");
+                if (confirmButton) {
+                    confirmButton.click();
+                }
+            }
+        }, 2000);
     }
     
-    // NOVO: Funções para detectar o CAPTCHA e pausar o script
     function checkForCaptcha() {
         const captchaContainer = document.querySelector('td.bot-protection-row');
         const hcaptchaIframe = document.querySelector('iframe[src*="hcaptcha.com"]');
@@ -292,9 +309,9 @@
         isScriptPaused = true;
 
         console.log("CAPTCHA detectado! Pausando o script completamente.");
-        clearInterval(sellInterval);     // Para a venda
-        clearInterval(buyInterval);      // Para a compra
-        clearInterval(reloadInterval);   // PARA O RECARREGAMENTO DA PÁGINA
+        clearInterval(sellInterval);
+        clearInterval(buyInterval);
+        clearInterval(reloadInterval);
 
         const mainContainer = document.getElementById("marketManagerMainContainer");
         if (mainContainer) {
@@ -309,7 +326,7 @@
 
 
     // =======================================================================
-    //  6. LÓGICA DE VENDA E COMPRA (MODIFICADA COM CHECAGEM DE CAPTCHA)
+    //  6. LÓGICA DE VENDA E COMPRA
     // =======================================================================
     function sellResource() {
         if (checkForCaptcha()) {
