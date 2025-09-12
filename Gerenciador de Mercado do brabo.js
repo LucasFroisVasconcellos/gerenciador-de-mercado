@@ -1,10 +1,10 @@
-// Versão 1.0.4 — última atualização em 2025-09-11T16:38:11Z
-// Versão Corrigida por Eva em 2025-09-11
+// Versão 1.0.5 — última atualização em 2025-09-12T14:01:33Z
+// Versão Corrigida por Eva em 2025-09-12 com detecção de CAPTCHA e parada total
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois
-// @version      5.6
+// @version      5.7
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -15,7 +15,6 @@
     //  1. CONFIGURAÇÕES E ESTADO INICIAL
     // =======================================================================
 
-    // Objeto para guardar as configurações padrão
     const defaultConfig = {
         wood: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
         stone: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
@@ -23,14 +22,15 @@
         global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null, last_buy_index: 0 }
     };
 
-    // Carrega as configurações ou usa o padrão
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
 
-    // Garante que configurações antigas recebam o novo parâmetro
     if (settings.global.last_buy_index === undefined) {
         settings.global.last_buy_index = 0;
     }
-
+    
+    // NOVO: Variáveis para guardar os IDs dos timers para que possam ser pausados
+    let sellInterval, buyInterval, reloadInterval;
+    let isScriptPaused = false;
 
     createUI();
     setupEventListeners();
@@ -38,15 +38,17 @@
     // =======================================================================
     //  2. LOOPS PRINCIPAIS (TIMERS)
     // =======================================================================
-    setInterval(sellResource, 7000);
-    setInterval(buyResource, 8500);
-    setInterval(() => { window.location.reload(); }, 300000); // Recarrega a cada 5 minutos
+    // MODIFICADO: Armazena os timers em variáveis para permitir a parada completa
+    sellInterval = setInterval(sellResource, 8000);
+    buyInterval = setInterval(buyResource, 9500);
+    reloadInterval = setInterval(() => { if (!isScriptPaused) window.location.reload(); }, 300000);
 
     // =======================================================================
     //  3. CRIAÇÃO DA INTERFACE (UI)
     // =======================================================================
     function createUI() {
         const userInputParent = document.getElementById("premium_exchange_form");
+        if (!userInputParent) return;
         const container = document.createElement("div");
         container.id = "marketManagerContainer";
         container.style.cssText = "display: flex; justify-content: space-between; gap: 10px;";
@@ -136,6 +138,7 @@
 
         container.innerHTML = sellUI + buyUI;
         const mainContainer = document.createElement('div');
+        mainContainer.id = "marketManagerMainContainer";
         mainContainer.innerHTML = `<hr>` + container.outerHTML + globalControlsUI;
         userInputParent.parentNode.insertBefore(mainContainer, userInputParent.nextSibling);
         updateBudgetDisplay();
@@ -183,14 +186,12 @@
         });
 
         document.getElementById('btnLigarCompra').addEventListener('click', () => {
-            // NOVO: Adiciona um aviso se o orçamento não estiver ligado
             if (!settings.global.budget_on) {
                 const someBuyIsOn = resources.some(res => document.getElementById(`buy_on_${res}`).checked);
                 if (someBuyIsOn) {
                     alert("Atenção: A compra automática só funcionará se o Orçamento Global estiver LIGADO. Por favor, ative o orçamento.");
                 }
             }
-
             resources.forEach(res => {
                 const isChecked = document.getElementById(`buy_on_${res}`).checked;
                 settings[res].buy_on = isChecked;
@@ -210,7 +211,6 @@
             alert('Compra desativada e salva para todos os recursos!');
         });
 
-
         document.getElementById('btnLigarBudget').addEventListener('click', () => {
             let currentPP = parseInt(document.getElementById("premium_points").innerText);
             let budgetPercent = parseInt(document.getElementById('global_budget_percent').value) || settings.global.budget_percent;
@@ -223,7 +223,7 @@
             settings.global.pp_start = currentPP;
             settings.global.pp_stop = currentPP - ppToSpend;
             settings.global.budget_on = true;
-            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings)); // Salva o estado do orçamento
+            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             updateBudgetDisplay();
         });
 
@@ -231,7 +231,7 @@
             settings.global.budget_on = false;
             settings.global.pp_start = null;
             settings.global.pp_stop = null;
-            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings)); // Salva o estado do orçamento
+            localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             updateBudgetDisplay();
         });
     }
@@ -276,12 +276,47 @@
             if (confirmButton) confirmButton.click();
         }, 1200);
     }
+    
+    // NOVO: Funções para detectar o CAPTCHA e pausar o script
+    function checkForCaptcha() {
+        const captchaContainer = document.querySelector('td.bot-protection-row');
+        const hcaptchaIframe = document.querySelector('iframe[src*="hcaptcha.com"]');
+        if ((captchaContainer && captchaContainer.offsetParent !== null) || hcaptchaIframe) {
+            return true;
+        }
+        return false;
+    }
+
+    function pauseScript() {
+        if (isScriptPaused) return;
+        isScriptPaused = true;
+
+        console.log("CAPTCHA detectado! Pausando o script completamente.");
+        clearInterval(sellInterval);     // Para a venda
+        clearInterval(buyInterval);      // Para a compra
+        clearInterval(reloadInterval);   // PARA O RECARREGAMENTO DA PÁGINA
+
+        const mainContainer = document.getElementById("marketManagerMainContainer");
+        if (mainContainer) {
+            const notice = document.createElement('div');
+            notice.innerHTML = `<div style="border: 3px solid #E53935; background-color: #FFEBEE; padding: 15px; margin-top: 10px; text-align: center;">
+                                    <h2 style="color: #D32F2F; margin: 0;">PROTEÇÃO CONTRA BOTS DETECTADA!</h2>
+                                    <p style="font-size: 14px; margin: 5px 0 0 0;">O script foi <strong>TOTALMENTE PAUSADO</strong>. Por favor, resolva o CAPTCHA e <strong>recarregue a página</strong> para continuar.</p>
+                                </div>`;
+            mainContainer.parentNode.insertBefore(notice, mainContainer);
+        }
+    }
 
 
     // =======================================================================
-    //  6. LÓGICA DE VENDA E COMPRA
+    //  6. LÓGICA DE VENDA E COMPRA (MODIFICADA COM CHECAGEM DE CAPTCHA)
     // =======================================================================
     function sellResource() {
+        if (checkForCaptcha()) {
+            pauseScript();
+            return;
+        }
+
         let merchAvail = document.getElementById("market_merchant_available_count").textContent;
         if (merchAvail < 1) return;
 
@@ -293,28 +328,25 @@
             const resData = allResInfo[resName];
             let surplus = resData.inVillage - resConfig.sell_res_cap;
 
-            // ===== LÓGICA DE VENDA CORRIGIDA =====
-            // A venda só ocorre se o excedente for MAIOR OU IGUAL à base de venda (packet_size)
             if (surplus >= resConfig.packet_size && resData.price <= resConfig.sell_rate_cap) {
-                // A quantidade a vender é exatamente a base de venda configurada.
                 let amountToSell = resConfig.packet_size;
                 if (amountToSell > 0) {
                     performTransaction('sell', resName, amountToSell);
-                    return; // Sai após iniciar uma transação
+                    return;
                 }
             }
         }
     }
 
-    // ================================================================
-    //  FUNÇÃO DE COMPRA COM VERIFICAÇÃO DE ORÇAMENTO CORRIGIDA
-    // ================================================================
     function buyResource() {
-        // Checagem inicial se o orçamento está ligado
+        if (checkForCaptcha()) {
+            pauseScript();
+            return;
+        }
+
         if (!settings.global.budget_on) return;
 
         let currentPP = parseInt(document.getElementById("premium_points").innerText);
-        // Checagem inicial se o orçamento já foi atingido
         if (settings.global.pp_stop && currentPP <= settings.global.pp_stop) {
             document.getElementById("btnDesligarBudget").click();
             return;
@@ -340,23 +372,14 @@
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
 
                 if (buyThis >= resConfig.buy_min_q) {
-                    // =================================================================
-                    //  NOVA VERIFICAÇÃO DE ORÇAMENTO ANTES DE CADA COMPRA
-                    // =================================================================
-                    // Calcula o custo em PP da transação. O preço é 'recursos por 1 PP'.
-                    // Math.ceil arredonda para cima para garantir que não gastemos mais do que o previsto.
                     let transactionCost = Math.ceil(buyThis / resData.price);
 
-                    // Verifica se a compra não ultrapassará o orçamento
                     if ((currentPP - transactionCost) >= settings.global.pp_stop) {
-                        // Se a compra for válida, define o próximo recurso e executa a transação
                         settings.global.last_buy_index = (currentIndex + 1) % resourceOrder.length;
                         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-
                         performTransaction('buy', resName, buyThis);
-                        return; // Sai após iniciar uma transação para esperar o próximo ciclo
+                        return;
                     } else {
-                        // Se a compra for exceder o limite, desliga o orçamento e para a execução.
                         console.log("Orçamento excederia com esta compra. Desligando a compra automática.");
                         document.getElementById("btnDesligarBudget").click();
                         return;
@@ -364,8 +387,7 @@
                 }
             }
         }
-
-        // Se o loop terminar sem compras, atualiza o índice para recomeçar do início no próximo ciclo
+        
         settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
