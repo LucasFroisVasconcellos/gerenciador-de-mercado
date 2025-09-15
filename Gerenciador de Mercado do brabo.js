@@ -1,10 +1,10 @@
 // Versão 1.1.1 — última atualização em 2025-09-15T09:01:35Z
-// Versão 6.4 — Adicionada verificação proativa para o modo de espera de comerciantes.
+// Versão 6.6 — Refatorado sistema de tooltips para renderizar sobre a UI do jogo e evitar cortes.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois & Eva
-// @version      6.4
+// @version      6.6
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -32,8 +32,12 @@
     let sellInterval, buyInterval, reloadInterval;
     let isScriptPaused = false;
 
-    createUI();
-    setupEventListeners();
+    // Atraso na inicialização para garantir que o DOM do jogo esteja pronto
+    setTimeout(() => {
+        createUI();
+        setupEventListeners();
+    }, 500);
+
 
     // =======================================================================
     //  2. LOOPS PRINCIPAIS (TIMERS)
@@ -62,15 +66,19 @@
                 font-style: italic; color: #804000; line-height: 16px; font-size: 12px;
                 background-color: #f4e4bc;
             }
-            .info-icon .tooltip-text {
-                visibility: hidden; width: 450px; background-color: #1a1a1a; color: #fff;
-                text-align: left; border-radius: 6px; padding: 15px; position: absolute;
-                z-index: 10; bottom: 150%; left: 50%; margin-left: -225px; opacity: 0;
-                transition: opacity 0.3s; font-size: 12px; font-weight: normal;
-                line-height: 1.5; font-family: Verdana, Arial, sans-serif; font-style: normal;
+            /* O tooltip agora é um elemento separado, posicionado de forma fixa na tela */
+            .tooltip-text {
+                visibility: hidden; opacity: 0;
+                width: 450px; background-color: #1a1a1a; color: #fff;
+                text-align: left; border-radius: 6px; padding: 15px;
+                position: fixed; /* MUDANÇA CRÍTICA: Posição fixa para sobrepor tudo */
+                z-index: 10001; /* Z-index muito alto para garantir que fique na frente */
+                transition: opacity 0.3s;
+                font-size: 12px; font-weight: normal; line-height: 1.5;
+                font-family: Verdana, Arial, sans-serif; font-style: normal;
+                pointer-events: none; /* Impede que o próprio tooltip intercepte eventos do mouse */
             }
-            .info-icon .tooltip-text strong { color: #ffd179; }
-            .info-icon:hover .tooltip-text { visibility: visible; opacity: 1; }
+            .tooltip-text strong { color: #ffd179; }
             .standby-notice {
                 display: none; border: 2px solid #ff8c00; background-color: #fff5e1;
                 padding: 10px; margin-bottom: 10px; text-align: center;
@@ -85,7 +93,21 @@
             global: `Esta área gerencia as configurações gerais do script e o seu orçamento.<br><br><strong>Orçamento em %:</strong> Ao clicar neste botão, o script ativa o modo de compra. Ele verifica quantos PPs você tem, calcula a porcentagem que você definiu e estabelece um "orçamento de gastos". Por exemplo, se você tem 5.000 PPs e definiu um orçamento de 20%, o script saberá que pode gastar 1.000 PPs e irá parar de comprar quando seu saldo atingir 4.000 PPs.<br><br><strong>Ligar Orçamento:</strong> Ativa o modo de compra. Ele calcula seu orçamento e estabelece um "ponto de parada" para os gastos.<br><br><strong>Desligar Orçamento:</strong> Desativa o modo de compra imediatamente.<br><br><strong>Salvar Configurações:</strong> Este é o botão de salvamento principal para todos os NÚMEROS que você digitou (limites, preços, etc.). É crucial clicar aqui para que suas estratégias sejam memorizadas.`
         };
 
-        const createTooltipIcon = (text, id) => `<span class="info-icon" id="${id}">i<span class="tooltip-text">${text}</span></span>`;
+        // MUDANÇA: Esta função agora cria o tooltip no body e retorna o ícone com uma referência a ele.
+        const createTooltipIcon = (text, id) => {
+            const tooltipId = `tooltip-for-${id}`;
+
+            // Cria o elemento tooltip e o anexa ao body para evitar ser cortado
+            const tooltipEl = document.createElement('span');
+            tooltipEl.className = 'tooltip-text';
+            tooltipEl.id = tooltipId;
+            tooltipEl.innerHTML = text;
+            document.body.appendChild(tooltipEl);
+
+            // Retorna o HTML apenas para o ícone, com um atributo de dados para encontrar seu tooltip
+            return `<span class="info-icon" data-tooltip-id="${tooltipId}" id="${id}">i</span>`;
+        };
+
         const container = document.createElement("div");
         container.id = "marketManagerContainer";
         container.style.cssText = "display: flex; justify-content: space-between; gap: 10px;";
@@ -108,7 +130,58 @@
         `;
         userInputParent.parentNode.insertBefore(mainContainer, userInputParent.nextSibling);
         updateBudgetDisplay();
+        initializeIntelligentTooltips();
     }
+
+    // =======================================================================
+    //  FUNÇÃO DE TOOLTIPS TOTALMENTE REFEITA
+    // =======================================================================
+    function initializeIntelligentTooltips() {
+        const infoIcons = document.querySelectorAll('.info-icon');
+        const MARGIN = 10; // Espaço em pixels das bordas e do ícone
+
+        infoIcons.forEach(icon => {
+            const tooltipId = icon.getAttribute('data-tooltip-id');
+            const tooltip = document.getElementById(tooltipId);
+            if (!tooltip) return;
+
+            const showTooltip = () => {
+                tooltip.style.visibility = 'visible';
+                tooltip.style.opacity = '1';
+
+                const iconRect = icon.getBoundingClientRect();
+                const tooltipRect = tooltip.getBoundingClientRect();
+
+                // Calcula a posição inicial (centralizado, acima do ícone)
+                let top = iconRect.top - tooltipRect.height - MARGIN;
+                let left = iconRect.left + (iconRect.width / 2) - (tooltipRect.width / 2);
+
+                // Ajusta para não sair pelas bordas da tela
+                if (left < MARGIN) {
+                    left = MARGIN;
+                }
+                if (left + tooltipRect.width > window.innerWidth - MARGIN) {
+                    left = window.innerWidth - tooltipRect.width - MARGIN;
+                }
+                if (top < MARGIN) {
+                    // Se sair pelo topo, inverte para baixo do ícone
+                    top = iconRect.bottom + MARGIN;
+                }
+
+                tooltip.style.top = `${top}px`;
+                tooltip.style.left = `${left}px`;
+            };
+
+            const hideTooltip = () => {
+                tooltip.style.visibility = 'hidden';
+                tooltip.style.opacity = '0';
+            };
+
+            icon.addEventListener('mouseenter', showTooltip);
+            icon.addEventListener('mouseleave', hideTooltip);
+        });
+    }
+
 
     // =======================================================================
     //  4. LÓGICA DOS CONTROLES (EVENT LISTENERS)
@@ -359,7 +432,7 @@
             const resData = allResInfo[resName];
             let warehouseSpace = maxStorage - resData.inVillage;
             let buyableAmount = resData.market_capacity;
-            if (resData.price >= resConfig.buy_rate && buyableAmount >= res_config.buy_min_q) {
+            if (resData.price >= resConfig.buy_rate && buyableAmount >= resConfig.buy_min_q) {
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
                 if (buyThis >= resConfig.buy_min_q) {
                     let transactionCost = Math.ceil(buyThis / resData.price);
