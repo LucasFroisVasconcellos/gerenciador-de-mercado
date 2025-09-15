@@ -1,10 +1,10 @@
-// Versão 1.1.0 — última atualização em 2025-09-15T08:37:13Z
-// Versão 6.2 — Refinamento visual dos ícones de ajuda e conteúdo completo nos tooltips.
+// Versão 1.1.1 — última atualização em 2025-09-15T09:01:35Z
+// Versão 6.4 — Adicionada verificação proativa para o modo de espera de comerciantes.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois & Eva
-// @version      6.2
+// @version      6.4
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -23,6 +23,7 @@
     };
 
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
+    let isWaitingForMerchants = false; // Estado de espera por comerciantes
 
     if (settings.global.last_buy_index === undefined) {
         settings.global.last_buy_index = 0;
@@ -49,160 +50,62 @@
         if (!userInputParent) return;
 
         // =======================================================================
-        // INJETANDO ESTILOS (CSS) PARA OS ÍCONES DE AJUDA (TOOLTIPS)
+        // INJETANDO ESTILOS (CSS) PARA OS ÍCONES DE AJUDA E AVISOS
         // =======================================================================
         const styleSheet = document.createElement("style");
         styleSheet.type = "text/css";
         styleSheet.innerText = `
             .info-icon {
-                position: relative;
-                display: inline-block;
-                cursor: help;
-                margin-left: 8px;
-                width: 16px;
-                height: 16px;
-                border: 1px solid #804000;
-                border-radius: 50%;
-                text-align: center;
-                font-weight: bold;
-                font-family: 'Times New Roman', serif;
-                font-style: italic;
-                color: #804000;
-                line-height: 16px; /* Alinha o 'i' verticalmente */
-                font-size: 12px;
+                position: relative; display: inline-block; cursor: help; margin-left: 8px;
+                width: 16px; height: 16px; border: 1px solid #804000; border-radius: 50%;
+                text-align: center; font-weight: bold; font-family: 'Times New Roman', serif;
+                font-style: italic; color: #804000; line-height: 16px; font-size: 12px;
                 background-color: #f4e4bc;
             }
             .info-icon .tooltip-text {
-                visibility: hidden;
-                width: 450px; /* Largura aumentada para o texto completo */
-                background-color: #1a1a1a;
-                color: #fff;
-                text-align: left;
-                border-radius: 6px;
-                padding: 15px;
-                position: absolute;
-                z-index: 10;
-                bottom: 150%;
-                left: 50%;
-                margin-left: -225px; /* Metade da largura para centralizar */
-                opacity: 0;
-                transition: opacity 0.3s;
-                font-size: 12px;
-                font-weight: normal;
-                line-height: 1.5;
-                font-family: Verdana, Arial, sans-serif;
-                font-style: normal;
+                visibility: hidden; width: 450px; background-color: #1a1a1a; color: #fff;
+                text-align: left; border-radius: 6px; padding: 15px; position: absolute;
+                z-index: 10; bottom: 150%; left: 50%; margin-left: -225px; opacity: 0;
+                transition: opacity 0.3s; font-size: 12px; font-weight: normal;
+                line-height: 1.5; font-family: Verdana, Arial, sans-serif; font-style: normal;
             }
             .info-icon .tooltip-text strong { color: #ffd179; }
-            .info-icon:hover .tooltip-text {
-                visibility: visible;
-                opacity: 1;
+            .info-icon:hover .tooltip-text { visibility: visible; opacity: 1; }
+            .standby-notice {
+                display: none; border: 2px solid #ff8c00; background-color: #fff5e1;
+                padding: 10px; margin-bottom: 10px; text-align: center;
+                font-weight: bold; color: #533600;
             }
         `;
         document.head.appendChild(styleSheet);
 
-        // Textos COMPLETOS para os tooltips
         const tooltips = {
             sell: `Esta seção configura o script para vender seus recursos excedentes sempre que as condições que você definir forem atendidas.<br><br><strong>Status:</strong> Esta caixa de seleção funciona como o interruptor principal "Liga/Desliga" para a venda de cada recurso.<br><br><strong>Manter armazém acima de:</strong> Pense nisto como seu estoque estratégico. O valor que você insere aqui é a quantidade mínima de recursos que você quer sempre ter na aldeia.<br><br><strong>Vender se preço ≤:</strong> Aqui você define o quão "caro" um Ponto Premium precisa estar para valer a pena vender. No mercado, um preço de venda baixo é melhor para você.<br><br><strong>Base de venda:</strong> Este é o seu valor de venda ideal por transação. O script automaticamente ajustará o valor para baixo para realizar uma venda segura e válida com apenas um comerciante.<br><br><strong>Botões:</strong> 'Aplicar Venda' salva apenas o Status (Ligado/Desligado). 'Desligar Venda' desliga todos.`,
             buy: `Esta seção automatiza a compra de recursos usando seus Pontos Premium, agindo quando as ofertas forem boas para você.<br><br><strong>Status:</strong> É o botão "Liga/Desliga" principal para a compra de cada recurso individualmente.<br><br><strong>Comprar se preço ≥:</strong> Esta é a sua condição de "bom negócio". Ao comprar, um preço alto é melhor, pois você ganha mais recursos por PP.<br><br><strong>Compra Mínima:</strong> Define a menor quantidade de recursos que vale a pena comprar, evitando transações muito pequenas.<br><br><strong>Compra Máxima:</strong> É o teto para cada transação de compra, mesmo que você tenha PPs e espaço de sobra.<br><br><strong>Botões:</strong> 'Aplicar Compra' salva apenas o Status (Ligado/Desligado). 'Desligar Compra' desliga todos.`,
             global: `Esta área gerencia as configurações gerais do script e o seu orçamento.<br><br><strong>Orçamento em %:</strong> Aqui você define qual porcentagem dos seus Pontos Premium atuais o script está autorizado a gastar.<br><br><strong>Ligar Orçamento:</strong> Ativa o modo de compra. Ele calcula seu orçamento e estabelece um "ponto de parada" para os gastos.<br><br><strong>Desligar Orçamento:</strong> Desativa o modo de compra imediatamente.<br><br><strong>Salvar Configurações:</strong> Este é o botão de salvamento principal para todos os NÚMEROS que você digitou (limites, preços, etc.). É crucial clicar aqui para que suas estratégias sejam memorizadas.`
         };
 
-        const createTooltipIcon = (text, id) => {
-            return `<span class="info-icon" id="${id}">i<span class="tooltip-text">${text}</span></span>`;
-        };
-
+        const createTooltipIcon = (text, id) => `<span class="info-icon" id="${id}">i<span class="tooltip-text">${text}</span></span>`;
         const container = document.createElement("div");
         container.id = "marketManagerContainer";
         container.style.cssText = "display: flex; justify-content: space-between; gap: 10px;";
-
         const resources = ['wood', 'stone', 'iron'];
         const resourceNames = { wood: 'Madeira', stone: 'Argila', iron: 'Ferro' };
-        const resourceIcons = {
-            wood: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/wood_18x16.png',
-            stone: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/stone_18x16.png',
-            iron: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/iron_18x16.png'
-        };
+        const resourceIcons = { wood: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/wood_18x16.png', stone: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/stone_18x16.png', iron: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/iron_18x16.png' };
 
-        let sellUI = `
-            <div class="vis" style="flex: 1; padding: 10px;">
-                <h3 style="text-align:center;">Venda Automática ${createTooltipIcon(tooltips.sell, 'sell_tooltip')}</h3>
-                <table class="vis" style="width: 100%;">
-                    <tr>
-                        <th>Recurso</th>
-                        ${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}
-                    </tr>
-                    <tr>
-                        <td><strong>Status</strong></td>
-                        ${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_on_${res}" ${settings[res].sell_on ? 'checked' : ''}><br><span id="sell_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].sell_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}
-                    </tr>
-                    <tr>
-                        <td>Manter armazem acima de</td>
-                        ${resources.map(res => `<td><input type="text" id="sell_res_cap_${res}" value="${settings[res].sell_res_cap || ''}" placeholder="ex: 500" style="width: 80%;"></td>`).join('')}
-                    </tr>
-                    <tr>
-                        <td>Vender se preço &le;</td>
-                        ${resources.map(res => `<td><input type="text" id="sell_rate_cap_${res}" value="${settings[res].sell_rate_cap || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}
-                    </tr>
-                    <tr>
-                        <td>Base de venda</td>
-                        ${resources.map(res => `<td><input type="text" id="packet_size_${res}" value="${settings[res].packet_size || ''}" placeholder="ex: 900" style="width: 80%;"></td>`).join('')}
-                    </tr>
-                </table>
-                <div style="text-align: center; margin-top: 10px;">
-                    <button id="btnLigarVenda" class="btn">Aplicar Venda (Selecionados)</button>
-                    <button id="btnDesligarVenda" class="btn">Desligar Venda (Todos)</button>
-                </div>
-            </div>
-        `;
-
-        let buyUI = `
-            <div class="vis" style="flex: 1; padding: 10px;">
-                <h3 style="text-align:center;">Compra Automática ${createTooltipIcon(tooltips.buy, 'buy_tooltip')}</h3>
-                <table class="vis" style="width: 100%;">
-                    <tr>
-                        <th>Recurso</th>
-                        ${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}
-                    </tr>
-                    <tr>
-                        <td><strong>Status</strong></td>
-                        ${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_on_${res}" ${settings[res].buy_on ? 'checked' : ''}><br><span id="buy_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].buy_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}
-                    </tr>
-                    <tr>
-                        <td>Comprar se preço &ge;</td>
-                        ${resources.map(res => `<td><input type="text" id="buy_rate_${res}" value="${settings[res].buy_rate || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}
-                    </tr>
-                    <tr>
-                        <td>Compra Mínima</td>
-                        ${resources.map(res => `<td><input type="text" id="buy_min_q_${res}" value="${settings[res].buy_min_q || ''}" placeholder="ex: 100" style="width: 80%;"></td>`).join('')}
-                    </tr>
-                    <tr>
-                        <td>Compra Máxima</td>
-                        ${resources.map(res => `<td><input type="text" id="buy_max_q_${res}" value="${settings[res].buy_max_q || ''}" placeholder="ex: 1000" style="width: 80%;"></td>`).join('')}
-                    </tr>
-                </table>
-                <div style="text-align: center; margin-top: 10px;">
-                    <button id="btnLigarCompra" class="btn">Aplicar Compra (Selecionados)</button>
-                    <button id="btnDesligarCompra" class="btn">Desligar Compra (Todos)</button>
-                </div>
-            </div>
-        `;
-
-        let globalControlsUI = `
-            <div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;">
-                <h3>Controles Globais ${createTooltipIcon(tooltips.global, 'global_tooltip')}</h3>
-                Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;">
-                <button id="btnLigarBudget" class="btn">Ligar Orçamento</button>
-                <button id="btnDesligarBudget" class="btn">Desligar Orçamento</button>
-                <button id="btnSalvar" class="btn" style="background-color: #4CAF50;">Salvar Configurações</button>
-                <div id="budget_status_display" style="margin-top: 5px; font-weight: bold; font-size: 12px;"></div>
-            </div>
-        `;
+        let sellUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Venda Automática ${createTooltipIcon(tooltips.sell, 'sell_tooltip')}</h3><table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_on_${res}" ${settings[res].sell_on ? 'checked' : ''}><br><span id="sell_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].sell_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Manter armazem acima de</td>${resources.map(res => `<td><input type="text" id="sell_res_cap_${res}" value="${settings[res].sell_res_cap || ''}" placeholder="ex: 500" style="width: 80%;"></td>`).join('')}</tr><tr><td>Vender se preço &le;</td>${resources.map(res => `<td><input type="text" id="sell_rate_cap_${res}" value="${settings[res].sell_rate_cap || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Base de venda</td>${resources.map(res => `<td><input type="text" id="packet_size_${res}" value="${settings[res].packet_size || ''}" placeholder="ex: 900" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarVenda" class="btn">Aplicar Venda (Selecionados)</button><button id="btnDesligarVenda" class="btn">Desligar Venda (Todos)</button></div></div>`;
+        let buyUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Compra Automática ${createTooltipIcon(tooltips.buy, 'buy_tooltip')}</h3><table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_on_${res}" ${settings[res].buy_on ? 'checked' : ''}><br><span id="buy_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].buy_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Comprar se preço &ge;</td>${resources.map(res => `<td><input type="text" id="buy_rate_${res}" value="${settings[res].buy_rate || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Mínima</td>${resources.map(res => `<td><input type="text" id="buy_min_q_${res}" value="${settings[res].buy_min_q || ''}" placeholder="ex: 100" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Máxima</td>${resources.map(res => `<td><input type="text" id="buy_max_q_${res}" value="${settings[res].buy_max_q || ''}" placeholder="ex: 1000" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarCompra" class="btn">Aplicar Compra (Selecionados)</button><button id="btnDesligarCompra" class="btn">Desligar Compra (Todos)</button></div></div>`;
+        let globalControlsUI = `<div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;"><h3>Controles Globais ${createTooltipIcon(tooltips.global, 'global_tooltip')}</h3>Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;"><button id="btnLigarBudget" class="btn">Ligar Orçamento</button><button id="btnDesligarBudget" class="btn">Desligar Orçamento</button><button id="btnSalvar" class="btn" style="background-color: #4CAF50;">Salvar Configurações</button><div id="budget_status_display" style="margin-top: 5px; font-weight: bold; font-size: 12px;"></div></div>`;
 
         container.innerHTML = sellUI + buyUI;
         const mainContainer = document.createElement('div');
         mainContainer.id = "marketManagerMainContainer";
-        mainContainer.innerHTML = `<hr>` + container.outerHTML + globalControlsUI;
+        mainContainer.innerHTML = `
+            <div id="merchant_standby_notice" class="standby-notice">Não há comerciantes disponíveis. Aguardando o retorno.</div>
+            <hr>
+            ${container.outerHTML}
+            ${globalControlsUI}
+        `;
         userInputParent.parentNode.insertBefore(mainContainer, userInputParent.nextSibling);
         updateBudgetDisplay();
     }
@@ -212,7 +115,6 @@
     // =======================================================================
     function setupEventListeners() {
         const resources = ['wood', 'stone', 'iron'];
-
         document.getElementById('btnSalvar').addEventListener('click', () => {
             resources.forEach(res => {
                 settings[res].sell_res_cap = parseInt(document.getElementById(`sell_res_cap_${res}`).value) || 0;
@@ -227,7 +129,6 @@
             alert('Configurações de valores salvas!');
             location.reload();
         });
-
         document.getElementById('btnLigarVenda').addEventListener('click', () => {
             resources.forEach(res => {
                 const isChecked = document.getElementById(`sell_on_${res}`).checked;
@@ -237,7 +138,6 @@
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             alert('Status de Venda salvo conforme selecionado!');
         });
-
         document.getElementById('btnDesligarVenda').addEventListener('click', () => {
             resources.forEach(res => {
                 document.getElementById(`sell_on_${res}`).checked = false;
@@ -247,7 +147,6 @@
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             alert('Venda desativada e salva para todos os recursos!');
         });
-
         document.getElementById('btnLigarCompra').addEventListener('click', () => {
             if (!settings.global.budget_on) {
                 const someBuyIsOn = resources.some(res => document.getElementById(`buy_on_${res}`).checked);
@@ -263,7 +162,6 @@
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             alert('Status de Compra salvo conforme selecionado!');
         });
-
         document.getElementById('btnDesligarCompra').addEventListener('click', () => {
             resources.forEach(res => {
                 document.getElementById(`buy_on_${res}`).checked = false;
@@ -273,11 +171,9 @@
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             alert('Compra desativada e salva para todos os recursos!');
         });
-
         document.getElementById('btnLigarBudget').addEventListener('click', () => {
             let currentPP = parseInt(document.getElementById("premium_points").innerText);
             let budgetPercent = parseInt(document.getElementById('global_budget_percent').value) || settings.global.budget_percent;
-
             if (isNaN(currentPP) || isNaN(budgetPercent) || budgetPercent <= 0) {
                 alert("Por favor, defina um orçamento de PP válido em %.");
                 return;
@@ -289,7 +185,6 @@
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
             updateBudgetDisplay();
         });
-
         document.getElementById('btnDesligarBudget').addEventListener('click', () => {
             settings.global.budget_on = false;
             settings.global.pp_start = null;
@@ -338,9 +233,13 @@
 
         setTimeout(() => {
             const warningElement = document.querySelector('#premium_exchange td.warn');
-
             if (warningElement && warningElement.offsetParent !== null) {
-                console.log("Aviso detectado na janela de confirmação. Cancelando a transação.");
+                // VERIFICA SE O AVISO É DE FALTA DE COMERCIANTES (GATILHO REATIVO)
+                if (warningElement.textContent.includes('comerciante livre')) {
+                    console.log("Aviso de falta de comerciantes detectado (reativo). Ativando modo de espera.");
+                    isWaitingForMerchants = true;
+                    document.getElementById('merchant_standby_notice').style.display = 'block';
+                }
                 const cancelButton = document.querySelector('.btn.evt-cancel-btn-confirm-no');
                 if (cancelButton) {
                     cancelButton.click();
@@ -366,84 +265,72 @@
     function pauseScript() {
         if (isScriptPaused) return;
         isScriptPaused = true;
-
         console.log("CAPTCHA detectado! Pausando o script completamente.");
         clearInterval(sellInterval);
         clearInterval(buyInterval);
         clearInterval(reloadInterval);
-
         const mainContainer = document.getElementById("marketManagerMainContainer");
         if (mainContainer) {
             const notice = document.createElement('div');
-            notice.innerHTML = `<div style="border: 3px solid #E53935; background-color: #FFEBEE; padding: 15px; margin-top: 10px; text-align: center;">
-                                    <h2 style="color: #D32F2F; margin: 0;">PROTEÇÃO CONTRA BOTS DETECTADA!</h2>
-                                    <p style="font-size: 14px; margin: 5px 0 0 0;">O script foi <strong>TOTALMENTE PAUSADO</strong>. Por favor, resolva o CAPTCHA e <strong>recarregue a página</strong> para continuar.</p>
-                                </div>`;
+            notice.innerHTML = `<div style="border: 3px solid #E53935; background-color: #FFEBEE; padding: 15px; margin-top: 10px; text-align: center;"><h2 style="color: #D32F2F; margin: 0;">PROTEÇÃO CONTRA BOTS DETECTADA!</h2><p style="font-size: 14px; margin: 5px 0 0 0;">O script foi <strong>TOTALMENTE PAUSADO</strong>. Por favor, resolva o CAPTCHA e <strong>recarregue a página</strong> para continuar.</p></div>`;
             mainContainer.parentNode.insertBefore(notice, mainContainer);
         }
     }
-
 
     // =======================================================================
     //  6. LÓGICA DE VENDA E COMPRA
     // =======================================================================
     function sellResource() {
+        const merchAvail = parseInt(document.getElementById("market_merchant_available_count").textContent);
+
+        // --- LÓGICA UNIFICADA DE ESPERA POR COMERCIANTES ---
+        if (isWaitingForMerchants) {
+            if (merchAvail >= 2) {
+                console.log("Comerciantes disponíveis. Retomando as vendas.");
+                isWaitingForMerchants = false;
+                document.getElementById('merchant_standby_notice').style.display = 'none';
+            } else {
+                console.log("Modo de espera: Aguardando 2 comerciantes livres...");
+                return;
+            }
+        } else {
+            // GATILHO PROATIVO: Ativa o modo de espera se não houver comerciantes, antes de tentar vender.
+            if (merchAvail < 1) {
+                console.log("Nenhum comerciante disponível (proativo). Ativando modo de espera.");
+                isWaitingForMerchants = true;
+                document.getElementById('merchant_standby_notice').style.display = 'block';
+                return;
+            }
+        }
+
         if (checkForCaptcha()) {
             pauseScript();
             return;
         }
 
-        let merchAvail = document.getElementById("market_merchant_available_count").textContent;
-        if (merchAvail < 1) return;
-
         const allResInfo = getResInfo();
         for (const resName of ['wood', 'stone', 'iron']) {
             const resConfig = settings[resName];
             const resData = allResInfo[resName];
-
-            // Condições primárias para a venda
             if (!resConfig.sell_on || resConfig.sell_rate_cap === 0) continue;
             if (resData.price > resConfig.sell_rate_cap) continue;
-
-            // 1. Verificar excedente no armazém do jogador
             let surplus = resData.inVillage - resConfig.sell_res_cap;
             if (surplus <= 0) continue;
-
-            // 2. Verificar espaço disponível no mercado
             let marketSpaceAvailable = resData.market_capacity - resData.market_stock;
             if (marketSpaceAvailable <= 0) {
                 console.log(`Mercado de ${resName} está cheio. Aguardando.`);
                 continue;
             }
-
-            // =======================================================================
-            // NOVA LÓGICA DE CÁLCULO PARA 1 COMERCIANTE (baseado na taxa)
-            // =======================================================================
             const MERCHANT_CAPACITY_SAFE = 999;
             let maxSafeAmountBasedOnRate = 0;
             if (resData.price > 0) {
-                 // Calcula quantos "pacotes de taxa" cabem em 999 recursos
                 const numPackets = Math.floor(MERCHANT_CAPACITY_SAFE / resData.price);
-                // Calcula o valor máximo de venda com base nesses pacotes
                 maxSafeAmountBasedOnRate = numPackets * resData.price;
             }
-            // Se a taxa for maior que 999, maxSafeAmountBasedOnRate será 0, impedindo a venda.
-            // =======================================================================
-
-
-            // 3. Calcular a quantidade a vender com base em TODAS as restrições
-            let amountToSell = Math.min(
-                surplus,
-                resConfig.packet_size,
-                marketSpaceAvailable,
-                maxSafeAmountBasedOnRate // Novo limite dinâmico que substitui o valor fixo de 1000
-            );
-
-            // A venda só ocorre se a quantidade calculada for positiva e a base de venda estiver configurada
+            let amountToSell = Math.min(surplus, resConfig.packet_size, marketSpaceAvailable, maxSafeAmountBasedOnRate);
             if (amountToSell > 0 && resConfig.packet_size > 0) {
                 console.log(`Tentando vender ${Math.floor(amountToSell)} de ${resName} (Limite seguro: ${maxSafeAmountBasedOnRate})`);
                 performTransaction('sell', resName, amountToSell);
-                // Retorna para garantir que apenas uma transação ocorra por ciclo
                 return;
             }
         }
@@ -454,37 +341,28 @@
             pauseScript();
             return;
         }
-
         if (!settings.global.budget_on) return;
-
         let currentPP = parseInt(document.getElementById("premium_points").innerText);
         if (settings.global.pp_stop && currentPP <= settings.global.pp_stop) {
             document.getElementById("btnDesligarBudget").click();
             return;
         }
-
         const allResInfo = getResInfo();
         const maxStorage = parseInt(document.getElementById("storage").innerText);
         const resourceOrder = ['wood', 'stone', 'iron'];
         let startIndex = settings.global.last_buy_index || 0;
-
         for (let i = 0; i < resourceOrder.length; i++) {
             let currentIndex = (startIndex + i) % resourceOrder.length;
             const resName = resourceOrder[currentIndex];
             const resConfig = settings[resName];
-
             if (!resConfig.buy_on) continue;
-
             const resData = allResInfo[resName];
             let warehouseSpace = maxStorage - resData.inVillage;
-            let buyableAmount = resData.market_capacity; // Nota: A lógica original usa market_capacity, o correto seria market_stock. Mantido por consistência com a versão anterior.
-
-            if (resData.price >= resConfig.buy_rate && buyableAmount >= resConfig.buy_min_q) {
+            let buyableAmount = resData.market_capacity;
+            if (resData.price >= resConfig.buy_rate && buyableAmount >= res_config.buy_min_q) {
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
-
                 if (buyThis >= resConfig.buy_min_q) {
                     let transactionCost = Math.ceil(buyThis / resData.price);
-
                     if ((currentPP - transactionCost) >= settings.global.pp_stop) {
                         settings.global.last_buy_index = (currentIndex + 1) % resourceOrder.length;
                         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
@@ -498,7 +376,6 @@
                 }
             }
         }
-
         settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
