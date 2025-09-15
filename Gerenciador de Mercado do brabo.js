@@ -1,10 +1,10 @@
-// Versão 1.0.6 — última atualização em 2025-09-12T14:09:16Z
-// Versão Corrigida por Eva com detecção de CAPTCHA e aviso de mudança de taxa
+// Versão 1.0.6 — última atualização em 2025-09-15T07:57:45Z
+// Versão 5.9 — Modificada por Eva em 2025-09-15 para implementar lógica de capacidade de mercado e venda flexível
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
-// @author       Lucas Frois
-// @version      5.8
+// @author       Lucas Frois & Eva
+// @version      5.9
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -252,13 +252,18 @@
             statusSpan.textContent = isOn ? 'Ligado' : 'Desligado';
         }
     }
-
+    
+    // =============================================================================================
+    // MODIFICADO: Função 'getResInfo' para incluir o estoque do mercado
+    // =============================================================================================
     function getResInfo() {
         const resources = {};
         ['wood', 'stone', 'iron'].forEach((res, index) => {
             resources[res] = {
                 price: parseInt(document.getElementById(`premium_exchange_rate_${res}`).children[0].innerText),
                 inVillage: parseInt(document.getElementById(res).innerText),
+                // Adicionado para a nova lógica de venda (Ponto 2)
+                market_stock: parseInt(document.getElementById(`premium_exchange_stock_${res}`).innerHTML),
                 market_capacity: parseInt(document.getElementById(`premium_exchange_capacity_${res}`).innerHTML)
             };
         });
@@ -266,33 +271,33 @@
     }
 
     // =============================================================================================
-    // MODIFICADO: Função 'performTransaction' com lógica para lidar com a mudança na taxa de troca
+    // MODIFICADO: Função 'performTransaction' com detecção genérica de avisos (Pontos 1 e 4)
     // =============================================================================================
     function performTransaction(type, resource, amount) {
         document.querySelectorAll(`input.premium-exchange-input[data-type="${type}"]`).forEach(el => el.value = "");
         document.querySelector(`input.premium-exchange-input[name="${type}_${resource}"]`).value = Math.floor(amount);
         document.getElementsByClassName("btn-premium-exchange-buy")[0].click();
 
-        // Aumentei o tempo para 2 segundos para dar mais margem para o popup de confirmação carregar
+        // Aumentado o tempo para 2.5 segundos para maior robustez
         setTimeout(() => {
-            // Verifica se o aviso de "taxa de troca mudou" está visível
             const warningElement = document.querySelector('#premium_exchange td.warn');
             
-            if (warningElement && warningElement.offsetParent !== null && warningElement.textContent.includes('A taxa de troca mudou')) {
-                // Se o aviso aparecer, o script clica em "Cancelar"
-                console.log("A taxa de troca mudou. Cancelando a transação para tentar novamente no próximo ciclo.");
+            // Verifica se QUALQUER aviso está visível no pop-up de confirmação.
+            // A checagem 'offsetParent !== null' garante que o elemento está de fato visível na tela.
+            if (warningElement && warningElement.offsetParent !== null) {
+                console.log("Aviso detectado na janela de confirmação. Cancelando a transação.");
                 const cancelButton = document.querySelector('.btn.evt-cancel-btn-confirm-no');
                 if (cancelButton) {
                     cancelButton.click();
                 }
             } else {
-                // Caso contrário (sem aviso), o script prossegue com a confirmação normal
+                // Se nenhum aviso for encontrado, prossegue com a confirmação.
                 const confirmButton = document.querySelector(".btn-confirm-yes");
                 if (confirmButton) {
                     confirmButton.click();
                 }
             }
-        }, 2000);
+        }, 2500);
     }
     
     function checkForCaptcha() {
@@ -328,6 +333,9 @@
     // =======================================================================
     //  6. LÓGICA DE VENDA E COMPRA
     // =======================================================================
+    // =================================================================================================================
+    // MODIFICADO: Função 'sellResource' com nova lógica completa de verificação (Pontos 2 e 3)
+    // =================================================================================================================
     function sellResource() {
         if (checkForCaptcha()) {
             pauseScript();
@@ -340,17 +348,37 @@
         const allResInfo = getResInfo();
         for (const resName of ['wood', 'stone', 'iron']) {
             const resConfig = settings[resName];
-            if (!resConfig.sell_on) continue;
-
             const resData = allResInfo[resName];
-            let surplus = resData.inVillage - resConfig.sell_res_cap;
 
-            if (surplus >= resConfig.packet_size && resData.price <= resConfig.sell_rate_cap) {
-                let amountToSell = resConfig.packet_size;
-                if (amountToSell > 0) {
-                    performTransaction('sell', resName, amountToSell);
-                    return;
-                }
+            // Condições primárias para a venda
+            if (!resConfig.sell_on || resConfig.sell_rate_cap === 0) continue;
+            if (resData.price > resConfig.sell_rate_cap) continue;
+
+            // 1. Verificar excedente no armazém do jogador
+            let surplus = resData.inVillage - resConfig.sell_res_cap;
+            if (surplus <= 0) continue;
+
+            // 2. Verificar espaço disponível no mercado (Ponto 2)
+            let marketSpaceAvailable = resData.market_capacity - resData.market_stock;
+            if (marketSpaceAvailable <= 0) {
+                console.log(`Mercado de ${resName} está cheio. Aguardando.`);
+                continue;
+            }
+
+            // 3. Calcular a quantidade a vender com base em todas as restrições
+            let amountToSell = Math.min(
+                surplus,                 // Não pode vender mais do que o seu excedente
+                resConfig.packet_size,   // Limite da "Base de venda"
+                marketSpaceAvailable,    // Limite do espaço no mercado (Ponto 2)
+                1000                     // Limite de 1 comerciante (Ponto 3)
+            );
+            
+            // A venda só ocorre se a quantidade calculada for positiva e a base de venda estiver configurada
+            if (amountToSell > 0 && resConfig.packet_size > 0) {
+                console.log(`Tentando vender ${Math.floor(amountToSell)} de ${resName}`);
+                performTransaction('sell', resName, amountToSell);
+                // Retorna para garantir que apenas uma transação ocorra por ciclo
+                return;
             }
         }
     }
@@ -383,7 +411,7 @@
 
             const resData = allResInfo[resName];
             let warehouseSpace = maxStorage - resData.inVillage;
-            let buyableAmount = resData.market_capacity;
+            let buyableAmount = resData.market_capacity; // Nota: A lógica original usa market_capacity, o correto seria market_stock. Mantido por consistência com a versão anterior.
 
             if (resData.price >= resConfig.buy_rate && buyableAmount >= resConfig.buy_min_q) {
                 let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
