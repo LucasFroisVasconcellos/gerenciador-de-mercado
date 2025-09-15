@@ -1,10 +1,10 @@
-// Versão 1.0.9 — última atualização em 2025-09-15T08:32:37Z
-// Versão 6.1 — Adicionados ícones de ajuda (tooltips) na interface.
+// Versão 1.1.0 — última atualização em 2025-09-15T08:37:13Z
+// Versão 6.2 — Refinamento visual dos ícones de ajuda e conteúdo completo nos tooltips.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois & Eva
-// @version      6.1
+// @version      6.2
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -58,30 +58,42 @@
                 position: relative;
                 display: inline-block;
                 cursor: help;
-                margin-left: 5px;
-                color: #804000;
+                margin-left: 8px;
+                width: 16px;
+                height: 16px;
+                border: 1px solid #804000;
+                border-radius: 50%;
+                text-align: center;
                 font-weight: bold;
-                font-size: 14px;
+                font-family: 'Times New Roman', serif;
+                font-style: italic;
+                color: #804000;
+                line-height: 16px; /* Alinha o 'i' verticalmente */
+                font-size: 12px;
+                background-color: #f4e4bc;
             }
             .info-icon .tooltip-text {
                 visibility: hidden;
-                width: 300px;
+                width: 450px; /* Largura aumentada para o texto completo */
                 background-color: #1a1a1a;
                 color: #fff;
                 text-align: left;
                 border-radius: 6px;
-                padding: 10px;
+                padding: 15px;
                 position: absolute;
                 z-index: 10;
-                bottom: 135%;
+                bottom: 150%;
                 left: 50%;
-                margin-left: -150px; /* Metade da largura para centralizar */
+                margin-left: -225px; /* Metade da largura para centralizar */
                 opacity: 0;
                 transition: opacity 0.3s;
                 font-size: 12px;
                 font-weight: normal;
-                line-height: 1.4;
+                line-height: 1.5;
+                font-family: Verdana, Arial, sans-serif;
+                font-style: normal;
             }
+            .info-icon .tooltip-text strong { color: #ffd179; }
             .info-icon:hover .tooltip-text {
                 visibility: visible;
                 opacity: 1;
@@ -89,15 +101,15 @@
         `;
         document.head.appendChild(styleSheet);
 
-        // Textos para os tooltips
+        // Textos COMPLETOS para os tooltips
         const tooltips = {
-            sell: "Configura o script para vender recursos excedentes. Defina um estoque de segurança, o preço mínimo para venda (quanto menor, melhor) e uma base de venda, que será ajustada para usar sempre 1 comerciante.",
-            buy: "Configura o script para comprar recursos. Defina o preço que considera um bom negócio (quanto maior, melhor) e as quantidades mínima e máxima para cada transação. A compra só funciona com o Orçamento Global ligado.",
-            global: "Gerencia as configurações gerais. O Orçamento define quantos % dos seus PPs podem ser gastos. O botão 'Salvar Configurações' é crucial para gravar todos os valores numéricos de preço e quantidade que você digitou."
+            sell: `Esta seção configura o script para vender seus recursos excedentes sempre que as condições que você definir forem atendidas.<br><br><strong>Status:</strong> Esta caixa de seleção funciona como o interruptor principal "Liga/Desliga" para a venda de cada recurso.<br><br><strong>Manter armazém acima de:</strong> Pense nisto como seu estoque estratégico. O valor que você insere aqui é a quantidade mínima de recursos que você quer sempre ter na aldeia.<br><br><strong>Vender se preço ≤:</strong> Aqui você define o quão "caro" um Ponto Premium precisa estar para valer a pena vender. No mercado, um preço de venda baixo é melhor para você.<br><br><strong>Base de venda:</strong> Este é o seu valor de venda ideal por transação. O script automaticamente ajustará o valor para baixo para realizar uma venda segura e válida com apenas um comerciante.<br><br><strong>Botões:</strong> 'Aplicar Venda' salva apenas o Status (Ligado/Desligado). 'Desligar Venda' desliga todos.`,
+            buy: `Esta seção automatiza a compra de recursos usando seus Pontos Premium, agindo quando as ofertas forem boas para você.<br><br><strong>Status:</strong> É o botão "Liga/Desliga" principal para a compra de cada recurso individualmente.<br><br><strong>Comprar se preço ≥:</strong> Esta é a sua condição de "bom negócio". Ao comprar, um preço alto é melhor, pois você ganha mais recursos por PP.<br><br><strong>Compra Mínima:</strong> Define a menor quantidade de recursos que vale a pena comprar, evitando transações muito pequenas.<br><br><strong>Compra Máxima:</strong> É o teto para cada transação de compra, mesmo que você tenha PPs e espaço de sobra.<br><br><strong>Botões:</strong> 'Aplicar Compra' salva apenas o Status (Ligado/Desligado). 'Desligar Compra' desliga todos.`,
+            global: `Esta área gerencia as configurações gerais do script e o seu orçamento.<br><br><strong>Orçamento em %:</strong> Aqui você define qual porcentagem dos seus Pontos Premium atuais o script está autorizado a gastar.<br><br><strong>Ligar Orçamento:</strong> Ativa o modo de compra. Ele calcula seu orçamento e estabelece um "ponto de parada" para os gastos.<br><br><strong>Desligar Orçamento:</strong> Desativa o modo de compra imediatamente.<br><br><strong>Salvar Configurações:</strong> Este é o botão de salvamento principal para todos os NÚMEROS que você digitou (limites, preços, etc.). É crucial clicar aqui para que suas estratégias sejam memorizadas.`
         };
 
-        const createTooltipIcon = (text) => {
-            return `<span class="info-icon">(i)<span class="tooltip-text">${text}</span></span>`;
+        const createTooltipIcon = (text, id) => {
+            return `<span class="info-icon" id="${id}">i<span class="tooltip-text">${text}</span></span>`;
         };
 
         const container = document.createElement("div");
@@ -114,7 +126,7 @@
 
         let sellUI = `
             <div class="vis" style="flex: 1; padding: 10px;">
-                <h3 style="text-align:center;">Venda Automática ${createTooltipIcon(tooltips.sell)}</h3>
+                <h3 style="text-align:center;">Venda Automática ${createTooltipIcon(tooltips.sell, 'sell_tooltip')}</h3>
                 <table class="vis" style="width: 100%;">
                     <tr>
                         <th>Recurso</th>
@@ -146,7 +158,7 @@
 
         let buyUI = `
             <div class="vis" style="flex: 1; padding: 10px;">
-                <h3 style="text-align:center;">Compra Automática ${createTooltipIcon(tooltips.buy)}</h3>
+                <h3 style="text-align:center;">Compra Automática ${createTooltipIcon(tooltips.buy, 'buy_tooltip')}</h3>
                 <table class="vis" style="width: 100%;">
                     <tr>
                         <th>Recurso</th>
@@ -178,7 +190,7 @@
 
         let globalControlsUI = `
             <div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;">
-                <h3>Controles Globais ${createTooltipIcon(tooltips.global)}</h3>
+                <h3>Controles Globais ${createTooltipIcon(tooltips.global, 'global_tooltip')}</h3>
                 Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;">
                 <button id="btnLigarBudget" class="btn">Ligar Orçamento</button>
                 <button id="btnDesligarBudget" class="btn">Desligar Orçamento</button>
