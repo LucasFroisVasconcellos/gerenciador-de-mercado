@@ -1,10 +1,10 @@
-// Versão 1.0.8 — última atualização em 2025-09-15T08:15:04Z
-// Versão 6.0 — Implementada lógica de cálculo de venda segura baseada na taxa (ideia do usuário)
+// Versão 1.0.9 — última atualização em 2025-09-15T08:32:37Z
+// Versão 6.1 — Adicionados ícones de ajuda (tooltips) na interface.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois & Eva
-// @version      6.0
+// @version      6.1
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -27,7 +27,7 @@
     if (settings.global.last_buy_index === undefined) {
         settings.global.last_buy_index = 0;
     }
-    
+
     let sellInterval, buyInterval, reloadInterval;
     let isScriptPaused = false;
 
@@ -47,6 +47,59 @@
     function createUI() {
         const userInputParent = document.getElementById("premium_exchange_form");
         if (!userInputParent) return;
+
+        // =======================================================================
+        // INJETANDO ESTILOS (CSS) PARA OS ÍCONES DE AJUDA (TOOLTIPS)
+        // =======================================================================
+        const styleSheet = document.createElement("style");
+        styleSheet.type = "text/css";
+        styleSheet.innerText = `
+            .info-icon {
+                position: relative;
+                display: inline-block;
+                cursor: help;
+                margin-left: 5px;
+                color: #804000;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            .info-icon .tooltip-text {
+                visibility: hidden;
+                width: 300px;
+                background-color: #1a1a1a;
+                color: #fff;
+                text-align: left;
+                border-radius: 6px;
+                padding: 10px;
+                position: absolute;
+                z-index: 10;
+                bottom: 135%;
+                left: 50%;
+                margin-left: -150px; /* Metade da largura para centralizar */
+                opacity: 0;
+                transition: opacity 0.3s;
+                font-size: 12px;
+                font-weight: normal;
+                line-height: 1.4;
+            }
+            .info-icon:hover .tooltip-text {
+                visibility: visible;
+                opacity: 1;
+            }
+        `;
+        document.head.appendChild(styleSheet);
+
+        // Textos para os tooltips
+        const tooltips = {
+            sell: "Configura o script para vender recursos excedentes. Defina um estoque de segurança, o preço mínimo para venda (quanto menor, melhor) e uma base de venda, que será ajustada para usar sempre 1 comerciante.",
+            buy: "Configura o script para comprar recursos. Defina o preço que considera um bom negócio (quanto maior, melhor) e as quantidades mínima e máxima para cada transação. A compra só funciona com o Orçamento Global ligado.",
+            global: "Gerencia as configurações gerais. O Orçamento define quantos % dos seus PPs podem ser gastos. O botão 'Salvar Configurações' é crucial para gravar todos os valores numéricos de preço e quantidade que você digitou."
+        };
+
+        const createTooltipIcon = (text) => {
+            return `<span class="info-icon">(i)<span class="tooltip-text">${text}</span></span>`;
+        };
+
         const container = document.createElement("div");
         container.id = "marketManagerContainer";
         container.style.cssText = "display: flex; justify-content: space-between; gap: 10px;";
@@ -61,7 +114,7 @@
 
         let sellUI = `
             <div class="vis" style="flex: 1; padding: 10px;">
-                <h3 style="text-align:center;">Venda Automática</h3>
+                <h3 style="text-align:center;">Venda Automática ${createTooltipIcon(tooltips.sell)}</h3>
                 <table class="vis" style="width: 100%;">
                     <tr>
                         <th>Recurso</th>
@@ -93,7 +146,7 @@
 
         let buyUI = `
             <div class="vis" style="flex: 1; padding: 10px;">
-                <h3 style="text-align:center;">Compra Automática</h3>
+                <h3 style="text-align:center;">Compra Automática ${createTooltipIcon(tooltips.buy)}</h3>
                 <table class="vis" style="width: 100%;">
                     <tr>
                         <th>Recurso</th>
@@ -125,7 +178,7 @@
 
         let globalControlsUI = `
             <div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;">
-                <h3>Controles Globais</h3>
+                <h3>Controles Globais ${createTooltipIcon(tooltips.global)}</h3>
                 Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;">
                 <button id="btnLigarBudget" class="btn">Ligar Orçamento</button>
                 <button id="btnDesligarBudget" class="btn">Desligar Orçamento</button>
@@ -252,7 +305,7 @@
             statusSpan.textContent = isOn ? 'Ligado' : 'Desligado';
         }
     }
-    
+
     function getResInfo() {
         const resources = {};
         ['wood', 'stone', 'iron'].forEach((res, index) => {
@@ -273,7 +326,7 @@
 
         setTimeout(() => {
             const warningElement = document.querySelector('#premium_exchange td.warn');
-            
+
             if (warningElement && warningElement.offsetParent !== null) {
                 console.log("Aviso detectado na janela de confirmação. Cancelando a transação.");
                 const cancelButton = document.querySelector('.btn.evt-cancel-btn-confirm-no');
@@ -288,7 +341,7 @@
             }
         }, 2500);
     }
-    
+
     function checkForCaptcha() {
         const captchaContainer = document.querySelector('td.bot-protection-row');
         const hcaptchaIframe = document.querySelector('iframe[src*="hcaptcha.com"]');
@@ -322,9 +375,6 @@
     // =======================================================================
     //  6. LÓGICA DE VENDA E COMPRA
     // =======================================================================
-    // =================================================================================================================
-    // MODIFICADO: Função 'sellResource' com cálculo preditivo de venda segura
-    // =================================================================================================================
     function sellResource() {
         if (checkForCaptcha()) {
             pauseScript();
@@ -353,7 +403,7 @@
                 console.log(`Mercado de ${resName} está cheio. Aguardando.`);
                 continue;
             }
-            
+
             // =======================================================================
             // NOVA LÓGICA DE CÁLCULO PARA 1 COMERCIANTE (baseado na taxa)
             // =======================================================================
@@ -376,7 +426,7 @@
                 marketSpaceAvailable,
                 maxSafeAmountBasedOnRate // Novo limite dinâmico que substitui o valor fixo de 1000
             );
-            
+
             // A venda só ocorre se a quantidade calculada for positiva e a base de venda estiver configurada
             if (amountToSell > 0 && resConfig.packet_size > 0) {
                 console.log(`Tentando vender ${Math.floor(amountToSell)} de ${resName} (Limite seguro: ${maxSafeAmountBasedOnRate})`);
@@ -436,7 +486,7 @@
                 }
             }
         }
-        
+
         settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
