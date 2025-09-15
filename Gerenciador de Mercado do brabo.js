@@ -1,4 +1,4 @@
-// Versão 1.0.6 — última atualização em 2025-09-15T07:57:45Z
+// Versão 1.0.7 — última atualização em 2025-09-15T07:57:45Z
 // Versão 5.9 — Modificada por Eva em 2025-09-15 para implementar lógica de capacidade de mercado e venda flexível
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
