@@ -1,4 +1,4 @@
-// Versão 1.1.1 — última atualização em 2025-09-15T09:01:35Z
+// Versão 1.1.2 — última atualização em 2025-09-15T21:35:35Z
 // Versão 6.6 — Refatorado sistema de tooltips para renderizar sobre a UI do jogo e evitar cortes.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
