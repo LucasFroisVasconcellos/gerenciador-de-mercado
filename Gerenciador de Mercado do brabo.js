@@ -356,7 +356,7 @@
     function sellResource() {
         const merchAvail = parseInt(document.getElementById("market_merchant_available_count").textContent);
 
-        // --- LÓGICA UNIFICADA DE ESPERA POR COMERCIANTES ---
+        // --- LÓGICA UNIFICADA DE ESPERA POR COMERCIANTES (invariável) ---
         if (isWaitingForMerchants) {
             if (merchAvail >= 2) {
                 console.log("Comerciantes disponíveis. Retomando as vendas.");
@@ -367,7 +367,6 @@
                 return;
             }
         } else {
-            // GATILHO PROATIVO: Ativa o modo de espera se não houver comerciantes, antes de tentar vender.
             if (merchAvail < 1) {
                 console.log("Nenhum comerciante disponível (proativo). Ativando modo de espera.");
                 isWaitingForMerchants = true;
@@ -385,27 +384,56 @@
         for (const resName of ['wood', 'stone', 'iron']) {
             const resConfig = settings[resName];
             const resData = allResInfo[resName];
+
+            // Condições iniciais (preço, venda ligada)
             if (!resConfig.sell_on || resConfig.sell_rate_cap === 0) continue;
             if (resData.price > resConfig.sell_rate_cap) continue;
-            let surplus = resData.inVillage - resConfig.sell_res_cap;
-            if (surplus <= 0) continue;
-            let marketSpaceAvailable = resData.market_capacity - resData.market_stock;
+
+            // =======================================================================
+            //  >>> INÍCIO DA LÓGICA MODIFICADA <<<
+            // =======================================================================
+
+            // Ponto de partida: a base de venda é o nosso alvo principal.
+            const baseAmount = resConfig.packet_size;
+            if (!baseAmount || baseAmount <= 0) continue; // Pula se não houver base de venda definida.
+
+            const surplus = resData.inVillage - resConfig.sell_res_cap;
+
+            // CONDIÇÃO PRIMÁRIA: Verifica se o excedente é suficiente para cobrir a base de venda.
+            // Se o excedente for menor que a base, ele não tenta vender uma fração. Ele simplesmente passa para o próximo recurso.
+            if (surplus < baseAmount) {
+                continue;
+            }
+
+            // Checagem das restrições (espaço no mercado e capacidade do comerciante)
+            const marketSpaceAvailable = resData.market_capacity - resData.market_stock;
             if (marketSpaceAvailable <= 0) {
                 console.log(`Mercado de ${resName} está cheio. Aguardando.`);
                 continue;
             }
+
             const MERCHANT_CAPACITY_SAFE = 999;
             let maxSafeAmountBasedOnRate = 0;
             if (resData.price > 0) {
+                // Calcula a quantidade máxima de recursos que podem ser vendidos com 1 comerciante
+                // sem exceder sua capacidade e resultando em um número inteiro de PP.
                 const numPackets = Math.floor(MERCHANT_CAPACITY_SAFE / resData.price);
                 maxSafeAmountBasedOnRate = numPackets * resData.price;
             }
-            let amountToSell = Math.min(surplus, resConfig.packet_size, marketSpaceAvailable, maxSafeAmountBasedOnRate);
-            if (amountToSell > 0 && resConfig.packet_size > 0) {
-                console.log(`Tentando vender ${Math.floor(amountToSell)} de ${resName} (Limite seguro: ${maxSafeAmountBasedOnRate})`);
+            if (maxSafeAmountBasedOnRate <= 0) continue; // Não é possível vender com um comerciante
+
+            // CÁLCULO FINAL: O valor a vender é o MENOR entre a base, o espaço no mercado e o limite do comerciante.
+            // O 'surplus' não entra mais neste cálculo, pois já foi verificado na condição primária.
+            let amountToSell = Math.min(baseAmount, marketSpaceAvailable, maxSafeAmountBasedOnRate);
+
+            if (amountToSell > 0) {
+                console.log(`Alvo de venda: ${baseAmount}. Restrições: [Espaço Mercado: ${marketSpaceAvailable}, Limite Comerciante: ${maxSafeAmountBasedOnRate}]. Vendendo ${Math.floor(amountToSell)} de ${resName}.`);
                 performTransaction('sell', resName, amountToSell);
-                return;
+                return; // Sai da função após iniciar uma transação para evitar vendas múltiplas.
             }
+            // =======================================================================
+            //  >>> FIM DA LÓGICA MODIFICADA <<<
+            // =======================================================================
         }
     }
 
