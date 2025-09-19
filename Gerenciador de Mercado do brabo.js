@@ -1,10 +1,10 @@
 // Versão 1.1.2 — última atualização em 2025-09-15T21:35:35Z
-// Versão 6.6 — Refatorado sistema de tooltips para renderizar sobre a UI do jogo e evitar cortes.
+// Versão 7.2 — Substituído o ícone de ajuda por um link "Como Usar?" abaixo dos títulos, conforme solicitado.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois & Eva
-// @version      6.6
+// @version      7.2
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -23,7 +23,7 @@
     };
 
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
-    let isWaitingForMerchants = false; // Estado de espera por comerciantes
+    let isWaitingForMerchants = false;
 
     if (settings.global.last_buy_index === undefined) {
         settings.global.last_buy_index = 0;
@@ -32,7 +32,6 @@
     let sellInterval, buyInterval, reloadInterval;
     let isScriptPaused = false;
 
-    // Atraso na inicialização para garantir que o DOM do jogo esteja pronto
     setTimeout(() => {
         createUI();
         setupEventListeners();
@@ -53,30 +52,37 @@
         const userInputParent = document.getElementById("premium_exchange_form");
         if (!userInputParent) return;
 
-        // =======================================================================
-        // INJETANDO ESTILOS (CSS) PARA OS ÍCONES DE AJUDA E AVISOS
-        // =======================================================================
         const styleSheet = document.createElement("style");
         styleSheet.type = "text/css";
         styleSheet.innerText = `
-            .info-icon {
-                position: relative; display: inline-block; cursor: help; margin-left: 8px;
-                width: 16px; height: 16px; border: 1px solid #804000; border-radius: 50%;
-                text-align: center; font-weight: bold; font-family: 'Times New Roman', serif;
-                font-style: italic; color: #804000; line-height: 16px; font-size: 12px;
-                background-color: #f4e4bc;
+            /* ALTERAÇÃO: Estilo para o novo container e link "Como Usar?" */
+            .gm-help-container {
+                text-align: center;
+                margin-top: -5px; /* Puxa para mais perto do título */
+                margin-bottom: 10px; /* Espaço antes da tabela */
             }
-            /* O tooltip agora é um elemento separado, posicionado de forma fixa na tela */
+            .gm-help-link {
+                font-size: 10pt;
+                font-weight: bold;
+                color: #603000; /* Cor padrão de links do tema */
+                cursor: help;
+                text-decoration: none;
+            }
+            .gm-help-link:hover {
+                text-decoration: underline;
+            }
+
+            /* Estilo do tooltip mantido, pois a funcionalidade continua a mesma */
             .tooltip-text {
                 visibility: hidden; opacity: 0;
                 width: 450px; background-color: #1a1a1a; color: #fff;
                 text-align: left; border-radius: 6px; padding: 15px;
-                position: fixed; /* MUDANÇA CRÍTICA: Posição fixa para sobrepor tudo */
-                z-index: 10001; /* Z-index muito alto para garantir que fique na frente */
+                position: fixed;
+                z-index: 10001;
                 transition: opacity 0.3s;
                 font-size: 12px; font-weight: normal; line-height: 1.5;
                 font-family: Verdana, Arial, sans-serif; font-style: normal;
-                pointer-events: none; /* Impede que o próprio tooltip intercepte eventos do mouse */
+                pointer-events: none;
             }
             .tooltip-text strong { color: #ffd179; }
             .standby-notice {
@@ -93,19 +99,25 @@
             global: `Esta área gerencia as configurações gerais do script e o seu orçamento.<br><br><strong>Orçamento em %:</strong> Ao clicar neste botão, o script ativa o modo de compra. Ele verifica quantos PPs você tem, calcula a porcentagem que você definiu e estabelece um "orçamento de gastos". Por exemplo, se você tem 5.000 PPs e definiu um orçamento de 20%, o script saberá que pode gastar 1.000 PPs e irá parar de comprar quando seu saldo atingir 4.000 PPs.<br><br><strong>Ligar Orçamento:</strong> Ativa o modo de compra. Ele calcula seu orçamento e estabelece um "ponto de parada" para os gastos.<br><br><strong>Desligar Orçamento:</strong> Desativa o modo de compra imediatamente.<br><br><strong>Salvar Configurações:</strong> Este é o botão de salvamento principal para todos os NÚMEROS que você digitou (limites, preços, etc.). É crucial clicar aqui para que suas estratégias sejam memorizadas.`
         };
 
-        // MUDANÇA: Esta função agora cria o tooltip no body e retorna o ícone com uma referência a ele.
-        const createTooltipIcon = (text, id) => {
+        // ALTERAÇÃO: A função agora cria o link "Como Usar?" completo.
+        const createHelpLink = (text, id) => {
             const tooltipId = `tooltip-for-${id}`;
 
-            // Cria o elemento tooltip e o anexa ao body para evitar ser cortado
             const tooltipEl = document.createElement('span');
             tooltipEl.className = 'tooltip-text';
             tooltipEl.id = tooltipId;
             tooltipEl.innerHTML = text;
             document.body.appendChild(tooltipEl);
 
-            // Retorna o HTML apenas para o ícone, com um atributo de dados para encontrar seu tooltip
-            return `<span class="info-icon" data-tooltip-id="${tooltipId}" id="${id}">i</span>`;
+            // Retorna o HTML do link, baseado na sua imagem do inspetor.
+            // O atributo 'data-tooltip-id' conecta este link à lógica de tooltip existente.
+            return `
+                <div class="gm-help-container">
+                    <a class="gm-help-link" data-tooltip-id="${tooltipId}" id="${id}">
+                        Como Usar? <img src="https://dsbr.innogamescdn.com/asset/e7e3d/graphic/questionmark.png" width="13" height="13" style="vertical-align: middle; margin-bottom: 3px;">
+                    </a>
+                </div>
+            `;
         };
 
         const container = document.createElement("div");
@@ -115,9 +127,12 @@
         const resourceNames = { wood: 'Madeira', stone: 'Argila', iron: 'Ferro' };
         const resourceIcons = { wood: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/wood_18x16.png', stone: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/stone_18x16.png', iron: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/iron_18x16.png' };
 
-        let sellUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Venda Automática ${createTooltipIcon(tooltips.sell, 'sell_tooltip')}</h3><table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_on_${res}" ${settings[res].sell_on ? 'checked' : ''}><br><span id="sell_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].sell_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Manter armazem acima de</td>${resources.map(res => `<td><input type="text" id="sell_res_cap_${res}" value="${settings[res].sell_res_cap || ''}" placeholder="ex: 500" style="width: 80%;"></td>`).join('')}</tr><tr><td>Vender se preço &le;</td>${resources.map(res => `<td><input type="text" id="sell_rate_cap_${res}" value="${settings[res].sell_rate_cap || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Base de venda</td>${resources.map(res => `<td><input type="text" id="packet_size_${res}" value="${settings[res].packet_size || ''}" placeholder="ex: 900" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarVenda" class="btn">Aplicar Venda (Selecionados)</button><button id="btnDesligarVenda" class="btn">Desligar Venda (Todos)</button></div></div>`;
-        let buyUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Compra Automática ${createTooltipIcon(tooltips.buy, 'buy_tooltip')}</h3><table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_on_${res}" ${settings[res].buy_on ? 'checked' : ''}><br><span id="buy_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].buy_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Comprar se preço &ge;</td>${resources.map(res => `<td><input type="text" id="buy_rate_${res}" value="${settings[res].buy_rate || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Mínima</td>${resources.map(res => `<td><input type="text" id="buy_min_q_${res}" value="${settings[res].buy_min_q || ''}" placeholder="ex: 100" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Máxima</td>${resources.map(res => `<td><input type="text" id="buy_max_q_${res}" value="${settings[res].buy_max_q || ''}" placeholder="ex: 1000" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarCompra" class="btn">Aplicar Compra (Selecionados)</button><button id="btnDesligarCompra" class="btn">Desligar Compra (Todos)</button></div></div>`;
-        let globalControlsUI = `<div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;"><h3>Controles Globais ${createTooltipIcon(tooltips.global, 'global_tooltip')}</h3>Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;"><button id="btnLigarBudget" class="btn">Ligar Orçamento</button><button id="btnDesligarBudget" class="btn">Desligar Orçamento</button><button id="btnSalvar" class="btn" style="background-color: #4CAF50;">Salvar Configurações</button><div id="budget_status_display" style="margin-top: 5px; font-weight: bold; font-size: 12px;"></div></div>`;
+        // ALTERAÇÃO: Removido o ícone do h3 e adicionado o link "Como Usar?" abaixo dele.
+        let sellUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Venda Automática</h3>${createHelpLink(tooltips.sell, 'sell_tooltip')}<table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_on_${res}" ${settings[res].sell_on ? 'checked' : ''}><br><span id="sell_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].sell_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Manter armazem acima de</td>${resources.map(res => `<td><input type="text" id="sell_res_cap_${res}" value="${settings[res].sell_res_cap || ''}" placeholder="ex: 500" style="width: 80%;"></td>`).join('')}</tr><tr><td>Vender se preço &le;</td>${resources.map(res => `<td><input type="text" id="sell_rate_cap_${res}" value="${settings[res].sell_rate_cap || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Base de venda</td>${resources.map(res => `<td><input type="text" id="packet_size_${res}" value="${settings[res].packet_size || ''}" placeholder="ex: 900" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarVenda" class="btn">Aplicar Venda (Selecionados)</button><button id="btnDesligarVenda" class="btn">Desligar Venda (Todos)</button></div></div>`;
+        // ALTERAÇÃO: Removido o ícone do h3 e adicionado o link "Como Usar?" abaixo dele.
+        let buyUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Compra Automática</h3>${createHelpLink(tooltips.buy, 'buy_tooltip')}<table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_on_${res}" ${settings[res].buy_on ? 'checked' : ''}><br><span id="buy_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].buy_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Comprar se preço &ge;</td>${resources.map(res => `<td><input type="text" id="buy_rate_${res}" value="${settings[res].buy_rate || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Mínima</td>${resources.map(res => `<td><input type="text" id="buy_min_q_${res}" value="${settings[res].buy_min_q || ''}" placeholder="ex: 100" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Máxima</td>${resources.map(res => `<td><input type="text" id="buy_max_q_${res}" value="${settings[res].buy_max_q || ''}" placeholder="ex: 1000" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarCompra" class="btn">Aplicar Compra (Selecionados)</button><button id="btnDesligarCompra" class="btn">Desligar Compra (Todos)</button></div></div>`;
+        // ALTERAÇÃO: Removido o ícone do h3 e adicionado o link "Como Usar?" abaixo dele.
+        let globalControlsUI = `<div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;"><h3>Controles Globais</h3>${createHelpLink(tooltips.global, 'global_tooltip')}Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;"><button id="btnLigarBudget" class="btn">Ligar Orçamento</button><button id="btnDesligarBudget" class="btn">Desligar Orçamento</button><button id="btnSalvar" class="btn" style="background-color: #4CAF50;">Salvar Configurações</button><div id="budget_status_display" style="margin-top: 5px; font-weight: bold; font-size: 12px;"></div></div>`;
 
         container.innerHTML = sellUI + buyUI;
         const mainContainer = document.createElement('div');
@@ -134,39 +149,31 @@
     }
 
     // =======================================================================
-    //  FUNÇÃO DE TOOLTIPS TOTALMENTE REFEITA
+    //  FUNÇÃO DE TOOLTIPS
     // =======================================================================
     function initializeIntelligentTooltips() {
-        const infoIcons = document.querySelectorAll('.info-icon');
-        const MARGIN = 10; // Espaço em pixels das bordas e do ícone
+        // ALTERAÇÃO: O seletor agora busca pela nova classe dos links "Como Usar?".
+        const helpLinks = document.querySelectorAll('.gm-help-link');
+        const MARGIN = 10;
 
-        infoIcons.forEach(icon => {
-            const tooltipId = icon.getAttribute('data-tooltip-id');
+        helpLinks.forEach(link => {
+            const tooltipId = link.getAttribute('data-tooltip-id');
             const tooltip = document.getElementById(tooltipId);
             if (!tooltip) return;
 
-            const showTooltip = () => {
+            const showTooltip = (event) => {
                 tooltip.style.visibility = 'visible';
                 tooltip.style.opacity = '1';
 
-                const iconRect = icon.getBoundingClientRect();
+                const linkRect = link.getBoundingClientRect();
                 const tooltipRect = tooltip.getBoundingClientRect();
 
-                // Calcula a posição inicial (centralizado, acima do ícone)
-                let top = iconRect.top - tooltipRect.height - MARGIN;
-                let left = iconRect.left + (iconRect.width / 2) - (tooltipRect.width / 2);
+                let top = linkRect.top - tooltipRect.height - MARGIN;
+                let left = linkRect.left + (linkRect.width / 2) - (tooltipRect.width / 2);
 
-                // Ajusta para não sair pelas bordas da tela
-                if (left < MARGIN) {
-                    left = MARGIN;
-                }
-                if (left + tooltipRect.width > window.innerWidth - MARGIN) {
-                    left = window.innerWidth - tooltipRect.width - MARGIN;
-                }
-                if (top < MARGIN) {
-                    // Se sair pelo topo, inverte para baixo do ícone
-                    top = iconRect.bottom + MARGIN;
-                }
+                if (left < MARGIN) left = MARGIN;
+                if (left + tooltipRect.width > window.innerWidth - MARGIN) left = window.innerWidth - tooltipRect.width - MARGIN;
+                if (top < MARGIN) top = linkRect.bottom + MARGIN;
 
                 tooltip.style.top = `${top}px`;
                 tooltip.style.left = `${left}px`;
@@ -177,8 +184,8 @@
                 tooltip.style.opacity = '0';
             };
 
-            icon.addEventListener('mouseenter', showTooltip);
-            icon.addEventListener('mouseleave', hideTooltip);
+            link.addEventListener('mouseenter', showTooltip);
+            link.addEventListener('mouseleave', hideTooltip);
         });
     }
 
