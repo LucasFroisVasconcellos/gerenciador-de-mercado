@@ -1,10 +1,10 @@
-// Versão 1.1.3 — última atualização em 2025-09-19T12:58:19Z
-// Versão 6.7 — Ícone de ajuda alterado para o ícone nativo do jogo.
+// Versão 1.1.2 — última atualização em 2025-09-15T21:35:35Z
+// Versão 6.6 — Refatorado sistema de tooltips para renderizar sobre a UI do jogo e evitar cortes.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
 // @author       Lucas Frois & Eva
-// @version      6.7
+// @version      6.6
 // @include      https://*/game.php*screen=market*
 // ==/UserScript==
 
@@ -59,8 +59,13 @@
         const styleSheet = document.createElement("style");
         styleSheet.type = "text/css";
         styleSheet.innerText = `
-            /* ALTERAÇÃO 2: Bloco .info-icon removido pois não é mais necessário */
-
+            .info-icon {
+                position: relative; display: inline-block; cursor: help; margin-left: 8px;
+                width: 16px; height: 16px; border: 1px solid #804000; border-radius: 50%;
+                text-align: center; font-weight: bold; font-family: 'Times New Roman', serif;
+                font-style: italic; color: #804000; line-height: 16px; font-size: 12px;
+                background-color: #f4e4bc;
+            }
             /* O tooltip agora é um elemento separado, posicionado de forma fixa na tela */
             .tooltip-text {
                 visibility: hidden; opacity: 0;
@@ -88,7 +93,7 @@
             global: `Esta área gerencia as configurações gerais do script e o seu orçamento.<br><br><strong>Orçamento em %:</strong> Ao clicar neste botão, o script ativa o modo de compra. Ele verifica quantos PPs você tem, calcula a porcentagem que você definiu e estabelece um "orçamento de gastos". Por exemplo, se você tem 5.000 PPs e definiu um orçamento de 20%, o script saberá que pode gastar 1.000 PPs e irá parar de comprar quando seu saldo atingir 4.000 PPs.<br><br><strong>Ligar Orçamento:</strong> Ativa o modo de compra. Ele calcula seu orçamento e estabelece um "ponto de parada" para os gastos.<br><br><strong>Desligar Orçamento:</strong> Desativa o modo de compra imediatamente.<br><br><strong>Salvar Configurações:</strong> Este é o botão de salvamento principal para todos os NÚMEROS que você digitou (limites, preços, etc.). É crucial clicar aqui para que suas estratégias sejam memorizadas.`
         };
 
-        // ALTERAÇÃO 1: Função modificada para retornar o ícone nativo do jogo
+        // MUDANÇA: Esta função agora cria o tooltip no body e retorna o ícone com uma referência a ele.
         const createTooltipIcon = (text, id) => {
             const tooltipId = `tooltip-for-${id}`;
 
@@ -99,11 +104,9 @@
             tooltipEl.innerHTML = text;
             document.body.appendChild(tooltipEl);
 
-            // Retorna o HTML do ícone nativo do jogo, mantendo os atributos do script e adicionando estilo para alinhamento.
-            // O cursor: help é adicionado para manter a indicação de que é um elemento de ajuda.
-            return `<span class="icon-small icon-info" data-tooltip-id="${tooltipId}" id="${id}" style="margin-left: 8px; transform: translateY(2px); cursor: help;"></span>`;
+            // Retorna o HTML apenas para o ícone, com um atributo de dados para encontrar seu tooltip
+            return `<span class="info-icon" data-tooltip-id="${tooltipId}" id="${id}">i</span>`;
         };
-
 
         const container = document.createElement("div");
         container.id = "marketManagerContainer";
@@ -134,8 +137,7 @@
     //  FUNÇÃO DE TOOLTIPS TOTALMENTE REFEITA
     // =======================================================================
     function initializeIntelligentTooltips() {
-        // Seleciona os ícones pela classe do jogo, para garantir que a funcionalidade continue
-        const infoIcons = document.querySelectorAll('.icon-info[data-tooltip-id]');
+        const infoIcons = document.querySelectorAll('.info-icon');
         const MARGIN = 10; // Espaço em pixels das bordas e do ícone
 
         infoIcons.forEach(icon => {
@@ -192,7 +194,7 @@
                 settings[res].sell_rate_cap = parseInt(document.getElementById(`sell_rate_cap_${res}`).value) || 0;
                 settings[res].packet_size = parseInt(document.getElementById(`packet_size_${res}`).value) || 0;
                 settings[res].buy_rate = parseInt(document.getElementById(`buy_rate_${res}`).value) || 0;
-                settings[res].buy_min_q = parseInt(document.getElementById(`buy_min_q_${res}`).value) ao|| 0;
+                settings[res].buy_min_q = parseInt(document.getElementById(`buy_min_q_${res}`).value) || 0;
                 settings[res].buy_max_q = parseInt(document.getElementById(`buy_max_q_${res}`).value) || 0;
             });
             settings.global.budget_percent = parseInt(document.getElementById('global_budget_percent').value) || 0;
