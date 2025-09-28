@@ -320,7 +320,7 @@
                     isWaitingForMerchants = true;
                     document.getElementById('merchant_standby_notice').style.display = 'block';
                 }
-                const cancelButton = document.querySelector('.btn.evt-cancel-btn-confirm-no');
+                const cancelButton = document.querySelector('.btn.evt-cancel-btn.btn-confirm-no');
                 if (cancelButton) {
                     cancelButton.click();
                 }
