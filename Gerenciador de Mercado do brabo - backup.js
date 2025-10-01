@@ -367,7 +367,7 @@
                 return;
             }
         } else {
-            if (merchAvail < 1) {
+            if (merchAvail < 2) {
                 console.log("Nenhum comerciante disponível (proativo). Ativando modo de espera.");
                 isWaitingForMerchants = true;
                 document.getElementById('merchant_standby_notice').style.display = 'block';
