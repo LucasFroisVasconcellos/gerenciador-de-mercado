@@ -1,4 +1,4 @@
-// Versão 1.1.4 — última atualização em 2025-11-21T14:25:32Z
+// Versão 1.1.5 — última atualização em 2025-11-21T14:29:18Z
 // Versão 7.4 — Adicionado modo maximo
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
@@ -507,7 +507,5 @@
         settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
-
-})();
 
 })();
