@@ -416,12 +416,16 @@
             // --- LÓGICA DIVIDIDA: MODO MÁXIMO vs MODO PADRÃO ---
 
             if (resConfig.sell_max) {
-                // MODO MÁXIMO: Ignora 'packet_size'. Vende o máximo que der.
-                // Limita pelo: 1. Excedente, 2. Espaço no Mercado, 3. Total de Mercadores
-                let maxLimit = Math.min(surplus, marketSpaceAvailable, merchAvail * 1000);
-
-                // Arredonda para baixo para ser múltiplo do preço (pacote válido)
-                // Ex: Preço 64, Max 1000 -> 15 pacotes = 960 recursos.
+                // =================================================================
+                // ALTERAÇÃO: BUFFER DE SEGURANÇA
+                // Subtrai 1 comerciante do total disponível para margem de erro.
+                // Math.max(0, ...) garante que o número não seja negativo.
+                let safeMerchants = Math.max(0, merchAvail - 1);
+                
+                // Usa 'safeMerchants' no lugar de 'merchAvail' para o limite
+                let maxLimit = Math.min(surplus, marketSpaceAvailable, safeMerchants * 1000);
+                // =================================================================
+                
                 if (maxLimit >= resData.price) {
                     let packets = Math.floor(maxLimit / resData.price);
                     amountToSell = packets * resData.price;
