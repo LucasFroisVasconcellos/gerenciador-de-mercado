@@ -1,4 +1,4 @@
-// Versão 1.1.3 — última atualização em 2025-09-15T21:35:35Z
+// Versão 1.1.3 — última atualização em 2025-11-21T12:37:08Z
 // Versão 7.3 — Substituído o ícone de ajuda por um link "Como Usar?" abaixo dos títulos, conforme solicitado.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
