@@ -1,5 +1,5 @@
-// Versão 1.1.2 — última atualização em 2025-09-15T21:35:35Z
-// Versão 7.2 — Substituído o ícone de ajuda por um link "Como Usar?" abaixo dos títulos, conforme solicitado.
+// Versão 1.1.3 — última atualização em 2025-09-15T21:35:35Z
+// Versão 7.3 — Substituído o ícone de ajuda por um link "Como Usar?" abaixo dos títulos, conforme solicitado.
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
@@ -419,15 +419,29 @@
                 continue;
             }
 
-            const MERCHANT_CAPACITY_SAFE = 999;
+            // =======================================================================
+            //  LÓGICA DE CAPACIDADE COM EXCEÇÃO PARA TAXA > 999
+            // =======================================================================
+            
+            // 1. Define o limite padrão de segurança (1 comerciante)
+            let limitToUse = 999; 
+
+            // 2. A EXCEÇÃO: Se o preço for maior que 999 (exige mais de 1 comerciante para 1 PP),
+            // nós ignoramos o limite de 999 e usamos a capacidade TOTAL dos seus comerciantes livres.
+            if (resData.price > 999) {
+                limitToUse = merchAvail * 1000;
+            }
+
             let maxSafeAmountBasedOnRate = 0;
+            
             if (resData.price > 0) {
-                // Calcula a quantidade máxima de recursos que podem ser vendidos com 1 comerciante
-                // sem exceder sua capacidade e resultando em um número inteiro de PP.
-                const numPackets = Math.floor(MERCHANT_CAPACITY_SAFE / resData.price);
+                // O cálculo agora usa a variável 'limitToUse' que se adapta à regra acima
+                const numPackets = Math.floor(limitToUse / resData.price);
                 maxSafeAmountBasedOnRate = numPackets * resData.price;
             }
-            if (maxSafeAmountBasedOnRate <= 0) continue; // Não é possível vender com um comerciante
+
+            // Se o resultado for 0 (seja por falta de comerciantes ou cálculo inválido), ele pula
+            if (maxSafeAmountBasedOnRate <= 0) continue;
 
             // CÁLCULO FINAL: O valor a vender é o MENOR entre a base, o espaço no mercado e o limite do comerciante.
             // O 'surplus' não entra mais neste cálculo, pois já foi verificado na condição primária.
