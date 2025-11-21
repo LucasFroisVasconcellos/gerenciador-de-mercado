@@ -1,4 +1,4 @@
-// Versão 1.1.5 — última atualização em 2025-11-21T14:29:18Z
+// Versão 1.1.6 — última atualização em 2025-11-21T15:02:04Z
 // Versão 7.4 — Adicionado modo maximo
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
