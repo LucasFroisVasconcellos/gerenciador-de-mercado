@@ -1,5 +1,5 @@
-// Versão 1.1.3 — última atualização em 2025-11-21T12:37:08Z
-// Versão 7.3 — Substituído o ícone de ajuda por um link "Como Usar?" abaixo dos títulos, conforme solicitado.
+// Versão 1.1.4 — última atualização em 2025-11-21T14:25:32Z
+// Versão 7.4 — Adicionado modo maximo
 // ==UserScript==
 // @name         Gerenciador de Mercado do brabo
 // @description  Automatiza a venda e compra de recursos no mercado premium com configurações individuais.
@@ -16,13 +16,21 @@
     // =======================================================================
 
     const defaultConfig = {
-        wood: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
-        stone: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
-        iron: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, buy_rate: 0, buy_min_q: 0, buy_max_q: 0 },
+        // Adicionado sell_max e buy_max como false por padrão
+        wood: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, sell_max: false, buy_rate: 0, buy_min_q: 0, buy_max_q: 0, buy_max: false },
+        stone: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, sell_max: false, buy_rate: 0, buy_min_q: 0, buy_max_q: 0, buy_max: false },
+        iron: { sell_on: false, buy_on: false, sell_res_cap: 0, sell_rate_cap: 0, packet_size: 0, sell_max: false, buy_rate: 0, buy_min_q: 0, buy_max_q: 0, buy_max: false },
         global: { budget_percent: 0, budget_on: false, pp_start: null, pp_stop: null, last_buy_index: 0 }
     };
 
     let settings = JSON.parse(localStorage.getItem('marketManagerSettings_v5')) || defaultConfig;
+
+    // Garante que propriedades novas existam se o usuário vier de uma versão antiga
+    ['wood', 'stone', 'iron'].forEach(res => {
+        if (settings[res].sell_max === undefined) settings[res].sell_max = false;
+        if (settings[res].buy_max === undefined) settings[res].buy_max = false;
+    });
+
     let isWaitingForMerchants = false;
 
     if (settings.global.last_buy_index === undefined) {
@@ -55,24 +63,21 @@
         const styleSheet = document.createElement("style");
         styleSheet.type = "text/css";
         styleSheet.innerText = `
-            /* ALTERAÇÃO: Estilo para o novo container e link "Como Usar?" */
             .gm-help-container {
                 text-align: center;
-                margin-top: -5px; /* Puxa para mais perto do título */
-                margin-bottom: 10px; /* Espaço antes da tabela */
+                margin-top: -5px;
+                margin-bottom: 10px;
             }
             .gm-help-link {
                 font-size: 10pt;
                 font-weight: bold;
-                color: #603000; /* Cor padrão de links do tema */
+                color: #603000;
                 cursor: help;
                 text-decoration: none;
             }
             .gm-help-link:hover {
                 text-decoration: underline;
             }
-
-            /* Estilo do tooltip mantido, pois a funcionalidade continua a mesma */
             .tooltip-text {
                 visibility: hidden; opacity: 0;
                 width: 450px; background-color: #1a1a1a; color: #fff;
@@ -94,23 +99,18 @@
         document.head.appendChild(styleSheet);
 
         const tooltips = {
-            sell: `Esta seção configura o script para vender seus recursos excedentes sempre que as condições que você definir forem atendidas.<br><br><strong>Status:</strong> Esta caixa de seleção funciona como o interruptor principal "Liga/Desliga" para a venda de cada recurso.<br><br><strong>Manter armazém acima de:</strong> Pense nisto como seu estoque estratégico. O valor que você insere aqui é a quantidade mínima de recursos que você quer sempre ter na aldeia. Por exemplo, se você colocar "50000", o script nunca fará uma venda que deixe seu armazém com menos de 50.000 daquele recurso.<br><br><strong>Vender se preço ≤:</strong> Aqui você define o quão "caro" um Ponto Premium precisa estar para valer a pena vender. No mercado, um preço de venda baixo é melhor para você. Se você definir este campo como "400", o script só irá vender se o mercado estiver pagando 400 ou menos recursos por 1 PP.<br><br><strong>Base de venda:</strong> Este é o seu valor de venda ideal por transação. Por exemplo, se você colocar "900", o script tentará vender 900 recursos. No entanto, ele é inteligente: se para vender 900 recursos for necessário mais de um comerciante, ou se o mercado não tiver espaço, ele automaticamente ajustará o valor para baixo para realizar uma venda segura e válida.<br><br><strong>Botões:</strong> 'Aplicar Venda' salva apenas o Status (Ligado/Desligado). 'Desligar Venda' desliga todos.`,
-            buy: `Esta seção automatiza a compra de recursos usando seus Pontos Premium, agindo quando as ofertas forem boas para você.<br><br><strong>Status:</strong> É o botão "Liga/Desliga" principal para a compra de cada recurso individualmente.<br><br><strong>Comprar se preço ≥:</strong> Esta é a sua condição de "bom negócio". Ao comprar, um preço alto é melhor, pois você ganha mais recursos por Ponto Premium. Se você colocar "600" aqui, o script só comprará recursos se o mercado estiver oferecendo 600 ou mais por 1 PP.<br><br><strong>Compra Mínima:</strong> Define a menor quantidade de recursos que vale a pena comprar. Isso evita que o script faça muitas compras pequenas. Por exemplo, se o valor for "1000", o script só executará uma compra se puder adquirir pelo menos 1.000 recursos de uma vez.<br><br><strong>Compra Máxima:</strong> É o teto para cada transação de compra. Mesmo que você tenha PPs e espaço de sobra, o script não comprará mais do que este valor em uma única operação. Se você definir como "5000", cada compra será de no máximo 5.000 recursos.<br><br><strong>Botões:</strong> 'Aplicar Compra' salva apenas o Status (Ligado/Desligado). 'Desligar Compra' desliga todos.`,
-            global: `Esta área gerencia as configurações gerais do script e o seu orçamento.<br><br><strong>Orçamento em %:</strong> Ao clicar neste botão, o script ativa o modo de compra. Ele verifica quantos PPs você tem, calcula a porcentagem que você definiu e estabelece um "orçamento de gastos". Por exemplo, se você tem 5.000 PPs e definiu um orçamento de 20%, o script saberá que pode gastar 1.000 PPs e irá parar de comprar quando seu saldo atingir 4.000 PPs.<br><br><strong>Ligar Orçamento:</strong> Ativa o modo de compra. Ele calcula seu orçamento e estabelece um "ponto de parada" para os gastos.<br><br><strong>Desligar Orçamento:</strong> Desativa o modo de compra imediatamente.<br><br><strong>Salvar Configurações:</strong> Este é o botão de salvamento principal para todos os NÚMEROS que você digitou (limites, preços, etc.). É crucial clicar aqui para que suas estratégias sejam memorizadas.`
+            sell: `Esta seção configura o script para vender seus recursos excedentes sempre que as condições que você definir forem atendidas.<br><br><strong>Status:</strong> Esta caixa de seleção funciona como o interruptor principal "Liga/Desliga" para a venda de cada recurso.<br><br><strong>Manter armazém acima de:</strong> Pense nisto como seu estoque estratégico. O valor que você insere aqui é a quantidade mínima de recursos que você quer sempre ter na aldeia. Por exemplo, se você colocar "50000", o script nunca fará uma venda que deixe seu armazém com menos de 50.000 daquele recurso.<br><br><strong>Vender se preço ≤:</strong> Aqui você define o quão "caro" um Ponto Premium precisa estar para valer a pena vender. No mercado, um preço de venda baixo é melhor para você. Se você definir este campo como "400", o script só irá vender se o mercado estiver pagando 400 ou menos recursos por 1 PP.<br><br><strong>Modo Máximo:</strong> Se marcado, o script IGNORA a "Base de venda". Ele calcula o máximo de recursos que você tem sobrando (acima do limite do armazém), verifica quantos mercadores estão livres e vende TUDO o que for possível de uma vez só.<br><br><strong>Base de venda:</strong> Este é o seu valor de venda ideal por transação. Por exemplo, se você colocar "900", o script tentará vender 900 recursos. No entanto, ele é inteligente: se para vender 900 recursos for necessário mais de um comerciante, ou se o mercado não tiver espaço, ele automaticamente ajustará o valor para baixo para realizar uma venda segura e válida.<br><br><strong>Botões:</strong> 'Aplicar Venda' salva apenas o Status (Ligado/Desligado). 'Desligar Venda' desliga todos.<br>`,
+            buy: `Esta seção automatiza a compra de recursos usando seus Pontos Premium, agindo quando as ofertas forem boas para você.<br><br><strong>Status:</strong> É o botão "Liga/Desliga" principal para a compra de cada recurso individualmente.<br><br><strong>Comprar se preço ≥:</strong> Esta é a sua condição de "bom negócio". Ao comprar, um preço alto é melhor, pois você ganha mais recursos por Ponto Premium. Se você colocar "600" aqui, o script só comprará recursos se o mercado estiver oferecendo 600 ou mais por 1 PP.<br><br><strong>Compra Mínima:</strong> Define a menor quantidade de recursos que vale a pena comprar. Isso evita que o script faça muitas compras pequenas. Por exemplo, se o valor for "1000", o script só executará uma compra se puder adquirir pelo menos 1.000 recursos de uma vez.<br><br><strong>Modo Máximo:</strong> Se marcado, o script IGNORA a "Compra Máxima". Ele comprará o máximo possível permitido pelo seu orçamento e pelo espaço livre no armazém em uma única transação.<br><br><strong>Compra Máxima:</strong> É o teto para cada transação de compra. Mesmo que você tenha PPs e espaço de sobra, o script não comprará mais do que este valor em uma única operação. Se você definir como "5000", cada compra será de no máximo 5.000 recursos.<br><br><strong>Botões:</strong> 'Aplicar Compra' salva apenas o Status (Ligado/Desligado). 'Desligar Compra' desliga todos.`,
+            global: `Configurações de orçamento (PPs). Necessário ligar o orçamento para que as compras funcionem.`
         };
 
-        // ALTERAÇÃO: A função agora cria o link "Como Usar?" completo.
         const createHelpLink = (text, id) => {
             const tooltipId = `tooltip-for-${id}`;
-
             const tooltipEl = document.createElement('span');
             tooltipEl.className = 'tooltip-text';
             tooltipEl.id = tooltipId;
             tooltipEl.innerHTML = text;
             document.body.appendChild(tooltipEl);
-
-            // Retorna o HTML do link, baseado na sua imagem do inspetor.
-            // O atributo 'data-tooltip-id' conecta este link à lógica de tooltip existente.
             return `
                 <div class="gm-help-container">
                     <a class="gm-help-link" data-tooltip-id="${tooltipId}" id="${id}">
@@ -127,11 +127,28 @@
         const resourceNames = { wood: 'Madeira', stone: 'Argila', iron: 'Ferro' };
         const resourceIcons = { wood: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/wood_18x16.png', stone: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/stone_18x16.png', iron: 'https://dsbr.innogamescdn.com/asset/af1188db/graphic/resources/iron_18x16.png' };
 
-        // ALTERAÇÃO: Removido o ícone do h3 e adicionado o link "Como Usar?" abaixo dele.
-        let sellUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Venda Automática</h3>${createHelpLink(tooltips.sell, 'sell_tooltip')}<table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_on_${res}" ${settings[res].sell_on ? 'checked' : ''}><br><span id="sell_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].sell_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Manter armazem acima de</td>${resources.map(res => `<td><input type="text" id="sell_res_cap_${res}" value="${settings[res].sell_res_cap || ''}" placeholder="ex: 500" style="width: 80%;"></td>`).join('')}</tr><tr><td>Vender se preço &le;</td>${resources.map(res => `<td><input type="text" id="sell_rate_cap_${res}" value="${settings[res].sell_rate_cap || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Base de venda</td>${resources.map(res => `<td><input type="text" id="packet_size_${res}" value="${settings[res].packet_size || ''}" placeholder="ex: 900" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarVenda" class="btn">Aplicar Venda (Selecionados)</button><button id="btnDesligarVenda" class="btn">Desligar Venda (Todos)</button></div></div>`;
-        // ALTERAÇÃO: Removido o ícone do h3 e adicionado o link "Como Usar?" abaixo dele.
-        let buyUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Compra Automática</h3>${createHelpLink(tooltips.buy, 'buy_tooltip')}<table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr><tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_on_${res}" ${settings[res].buy_on ? 'checked' : ''}><br><span id="buy_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].buy_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr><tr><td>Comprar se preço &ge;</td>${resources.map(res => `<td><input type="text" id="buy_rate_${res}" value="${settings[res].buy_rate || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Mínima</td>${resources.map(res => `<td><input type="text" id="buy_min_q_${res}" value="${settings[res].buy_min_q || ''}" placeholder="ex: 100" style="width: 80%;"></td>`).join('')}</tr><tr><td>Compra Máxima</td>${resources.map(res => `<td><input type="text" id="buy_max_q_${res}" value="${settings[res].buy_max_q || ''}" placeholder="ex: 1000" style="width: 80%;"></td>`).join('')}</tr></table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarCompra" class="btn">Aplicar Compra (Selecionados)</button><button id="btnDesligarCompra" class="btn">Desligar Compra (Todos)</button></div></div>`;
-        // ALTERAÇÃO: Removido o ícone do h3 e adicionado o link "Como Usar?" abaixo dele.
+        // --- UI DE VENDA (Adicionado Checkbox Modo Máximo) ---
+        let sellUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Venda Automática</h3>${createHelpLink(tooltips.sell, 'sell_tooltip')}<table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr>
+        <tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_on_${res}" ${settings[res].sell_on ? 'checked' : ''}><br><span id="sell_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].sell_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr>
+        <tr><td>Manter armazem ></td>${resources.map(res => `<td><input type="text" id="sell_res_cap_${res}" value="${settings[res].sell_res_cap || ''}" placeholder="ex: 500" style="width: 80%;"></td>`).join('')}</tr>
+        <tr><td>Vender se preço &le;</td>${resources.map(res => `<td><input type="text" id="sell_rate_cap_${res}" value="${settings[res].sell_rate_cap || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr>
+
+        <tr style="background-color: #fff5e1;"><td><strong>Modo Máximo?</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="sell_max_${res}" ${settings[res].sell_max ? 'checked' : ''} title="Ignora a base de venda e usa todos os mercadores disponíveis?"></td>`).join('')}</tr>
+
+        <tr><td>Base de venda</td>${resources.map(res => `<td><input type="text" id="packet_size_${res}" value="${settings[res].packet_size || ''}" placeholder="ex: 900" style="width: 80%;"></td>`).join('')}</tr>
+        </table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarVenda" class="btn">Aplicar Venda</button><button id="btnDesligarVenda" class="btn">Desligar Venda</button></div></div>`;
+
+        // --- UI DE COMPRA (Adicionado Checkbox Modo Máximo) ---
+        let buyUI = `<div class="vis" style="flex: 1; padding: 10px;"><h3 style="text-align:center;">Compra Automática</h3>${createHelpLink(tooltips.buy, 'buy_tooltip')}<table class="vis" style="width: 100%;"><tr><th>Recurso</th>${resources.map(res => `<th><img src="${resourceIcons[res]}" title="${resourceNames[res]}"> ${resourceNames[res]}</th>`).join('')}</tr>
+        <tr><td><strong>Status</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_on_${res}" ${settings[res].buy_on ? 'checked' : ''}><br><span id="buy_status_${res}" style="font-size:10px; font-weight:bold;">${settings[res].buy_on ? 'Ligado' : 'Desligado'}</span></td>`).join('')}</tr>
+        <tr><td>Comprar se preço &ge;</td>${resources.map(res => `<td><input type="text" id="buy_rate_${res}" value="${settings[res].buy_rate || ''}" placeholder="ex: 65" style="width: 80%;"></td>`).join('')}</tr>
+        <tr><td>Compra Mínima</td>${resources.map(res => `<td><input type="text" id="buy_min_q_${res}" value="${settings[res].buy_min_q || ''}" placeholder="ex: 100" style="width: 80%;"></td>`).join('')}</tr>
+
+        <tr style="background-color: #e1f5fe;"><td><strong>Modo Máximo?</strong></td>${resources.map(res => `<td style="text-align:center;"><input type="checkbox" id="buy_max_${res}" ${settings[res].buy_max ? 'checked' : ''} title="Ignora o limite de compra máxima e enche o armazém?"></td>`).join('')}</tr>
+
+        <tr><td>Compra Máxima</td>${resources.map(res => `<td><input type="text" id="buy_max_q_${res}" value="${settings[res].buy_max_q || ''}" placeholder="ex: 1000" style="width: 80%;"></td>`).join('')}</tr>
+        </table><div style="text-align: center; margin-top: 10px;"><button id="btnLigarCompra" class="btn">Aplicar Compra</button><button id="btnDesligarCompra" class="btn">Desligar Compra</button></div></div>`;
+
         let globalControlsUI = `<div class="vis" style="margin-top: 10px; padding: 10px; text-align: center;"><h3>Controles Globais</h3>${createHelpLink(tooltips.global, 'global_tooltip')}Orçamento em %: <input type="text" id="global_budget_percent" value="${settings.global.budget_percent || ''}" placeholder="ex: 20" style="width: 80px;"><button id="btnLigarBudget" class="btn">Ligar Orçamento</button><button id="btnDesligarBudget" class="btn">Desligar Orçamento</button><button id="btnSalvar" class="btn" style="background-color: #4CAF50;">Salvar Configurações</button><div id="budget_status_display" style="margin-top: 5px; font-weight: bold; font-size: 12px;"></div></div>`;
 
         container.innerHTML = sellUI + buyUI;
@@ -152,7 +169,6 @@
     //  FUNÇÃO DE TOOLTIPS
     // =======================================================================
     function initializeIntelligentTooltips() {
-        // ALTERAÇÃO: O seletor agora busca pela nova classe dos links "Como Usar?".
         const helpLinks = document.querySelectorAll('.gm-help-link');
         const MARGIN = 10;
 
@@ -164,26 +180,20 @@
             const showTooltip = (event) => {
                 tooltip.style.visibility = 'visible';
                 tooltip.style.opacity = '1';
-
                 const linkRect = link.getBoundingClientRect();
                 const tooltipRect = tooltip.getBoundingClientRect();
-
                 let top = linkRect.top - tooltipRect.height - MARGIN;
                 let left = linkRect.left + (linkRect.width / 2) - (tooltipRect.width / 2);
-
                 if (left < MARGIN) left = MARGIN;
                 if (left + tooltipRect.width > window.innerWidth - MARGIN) left = window.innerWidth - tooltipRect.width - MARGIN;
                 if (top < MARGIN) top = linkRect.bottom + MARGIN;
-
                 tooltip.style.top = `${top}px`;
                 tooltip.style.left = `${left}px`;
             };
-
             const hideTooltip = () => {
                 tooltip.style.visibility = 'hidden';
                 tooltip.style.opacity = '0';
             };
-
             link.addEventListener('mouseenter', showTooltip);
             link.addEventListener('mouseleave', hideTooltip);
         });
@@ -200,13 +210,18 @@
                 settings[res].sell_res_cap = parseInt(document.getElementById(`sell_res_cap_${res}`).value) || 0;
                 settings[res].sell_rate_cap = parseInt(document.getElementById(`sell_rate_cap_${res}`).value) || 0;
                 settings[res].packet_size = parseInt(document.getElementById(`packet_size_${res}`).value) || 0;
+                // Salva o estado do Modo Máximo de Venda
+                settings[res].sell_max = document.getElementById(`sell_max_${res}`).checked;
+
                 settings[res].buy_rate = parseInt(document.getElementById(`buy_rate_${res}`).value) || 0;
                 settings[res].buy_min_q = parseInt(document.getElementById(`buy_min_q_${res}`).value) || 0;
                 settings[res].buy_max_q = parseInt(document.getElementById(`buy_max_q_${res}`).value) || 0;
+                // Salva o estado do Modo Máximo de Compra
+                settings[res].buy_max = document.getElementById(`buy_max_${res}`).checked;
             });
             settings.global.budget_percent = parseInt(document.getElementById('global_budget_percent').value) || 0;
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-            alert('Configurações de valores salvas!');
+            alert('Configurações (incluindo Modo Máximo) salvas!');
             location.reload();
         });
         document.getElementById('btnLigarVenda').addEventListener('click', () => {
@@ -216,7 +231,7 @@
                 updateStatusDisplay('sell', res, isChecked);
             });
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-            alert('Status de Venda salvo conforme selecionado!');
+            alert('Status de Venda salvo!');
         });
         document.getElementById('btnDesligarVenda').addEventListener('click', () => {
             resources.forEach(res => {
@@ -225,13 +240,13 @@
                 updateStatusDisplay('sell', res, false);
             });
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-            alert('Venda desativada e salva para todos os recursos!');
+            alert('Venda desativada!');
         });
         document.getElementById('btnLigarCompra').addEventListener('click', () => {
             if (!settings.global.budget_on) {
                 const someBuyIsOn = resources.some(res => document.getElementById(`buy_on_${res}`).checked);
                 if (someBuyIsOn) {
-                    alert("Atenção: A compra automática só funcionará se o Orçamento Global estiver LIGADO. Por favor, ative o orçamento.");
+                    alert("Atenção: Ative o Orçamento Global para comprar.");
                 }
             }
             resources.forEach(res => {
@@ -240,7 +255,7 @@
                 updateStatusDisplay('buy', res, isChecked);
             });
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-            alert('Status de Compra salvo conforme selecionado!');
+            alert('Status de Compra salvo!');
         });
         document.getElementById('btnDesligarCompra').addEventListener('click', () => {
             resources.forEach(res => {
@@ -249,13 +264,13 @@
                 updateStatusDisplay('buy', res, false);
             });
             localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
-            alert('Compra desativada e salva para todos os recursos!');
+            alert('Compra desativada!');
         });
         document.getElementById('btnLigarBudget').addEventListener('click', () => {
             let currentPP = parseInt(document.getElementById("premium_points").innerText);
             let budgetPercent = parseInt(document.getElementById('global_budget_percent').value) || settings.global.budget_percent;
             if (isNaN(currentPP) || isNaN(budgetPercent) || budgetPercent <= 0) {
-                alert("Por favor, defina um orçamento de PP válido em %.");
+                alert("Defina um orçamento válido.");
                 return;
             }
             let ppToSpend = currentPP * (budgetPercent / 100);
@@ -280,7 +295,7 @@
     function updateBudgetDisplay() {
         let display = document.getElementById("budget_status_display");
         if (settings.global.budget_on && settings.global.pp_start && settings.global.pp_stop) {
-            display.textContent = `Orçamento Ativo: Gastar ${Math.round(settings.global.pp_start - settings.global.pp_stop)} PP. Parar em ${Math.round(settings.global.pp_stop)} PP.`;
+            display.textContent = `Orçamento: Gastar ${Math.round(settings.global.pp_start - settings.global.pp_stop)} PP. Parar em ${Math.round(settings.global.pp_stop)} PP.`;
         } else {
             display.textContent = "Orçamento Inativo.";
         }
@@ -314,9 +329,8 @@
         setTimeout(() => {
             const warningElement = document.querySelector('#premium_exchange td.warn');
             if (warningElement && warningElement.offsetParent !== null) {
-                // VERIFICA SE O AVISO É DE FALTA DE COMERCIANTES (GATILHO REATIVO)
                 if (warningElement.textContent.includes('comerciante livre')) {
-                    console.log("Aviso de falta de comerciantes detectado (reativo). Ativando modo de espera.");
+                    console.log("Falta de comerciantes (reativo). Ativando espera.");
                     isWaitingForMerchants = true;
                     document.getElementById('merchant_standby_notice').style.display = 'block';
                 }
@@ -345,37 +359,33 @@
     function pauseScript() {
         if (isScriptPaused) return;
         isScriptPaused = true;
-        console.log("CAPTCHA detectado! Pausando o script completamente.");
+        console.log("CAPTCHA detectado! Pausando.");
         clearInterval(sellInterval);
         clearInterval(buyInterval);
         clearInterval(reloadInterval);
         const mainContainer = document.getElementById("marketManagerMainContainer");
         if (mainContainer) {
             const notice = document.createElement('div');
-            notice.innerHTML = `<div style="border: 3px solid #E53935; background-color: #FFEBEE; padding: 15px; margin-top: 10px; text-align: center;"><h2 style="color: #D32F2F; margin: 0;">PROTEÇÃO CONTRA BOTS DETECTADA!</h2><p style="font-size: 14px; margin: 5px 0 0 0;">O script foi <strong>TOTALMENTE PAUSADO</strong>. Por favor, resolva o CAPTCHA e <strong>recarregue a página</strong> para continuar.</p></div>`;
+            notice.innerHTML = `<div style="border: 3px solid #E53935; background-color: #FFEBEE; padding: 15px; margin-top: 10px; text-align: center;"><h2 style="color: #D32F2F; margin: 0;">PROTEÇÃO CONTRA BOTS DETECTADA!</h2><p style="font-size: 14px; margin: 5px 0 0 0;">Resolva o CAPTCHA e recarregue a página.</p></div>`;
             mainContainer.parentNode.insertBefore(notice, mainContainer);
         }
     }
 
     // =======================================================================
-    //  6. LÓGICA DE VENDA E COMPRA
+    //  6. LÓGICA DE VENDA E COMPRA (MODIFICADA)
     // =======================================================================
     function sellResource() {
         const merchAvail = parseInt(document.getElementById("market_merchant_available_count").textContent);
 
-        // --- LÓGICA UNIFICADA DE ESPERA POR COMERCIANTES (invariável) ---
         if (isWaitingForMerchants) {
             if (merchAvail >= 2) {
-                console.log("Comerciantes disponíveis. Retomando as vendas.");
                 isWaitingForMerchants = false;
                 document.getElementById('merchant_standby_notice').style.display = 'none';
             } else {
-                console.log("Modo de espera: Aguardando 2 comerciantes livres...");
                 return;
             }
         } else {
             if (merchAvail < 1) {
-                console.log("Nenhum comerciante disponível (proativo). Ativando modo de espera.");
                 isWaitingForMerchants = true;
                 document.getElementById('merchant_standby_notice').style.display = 'block';
                 return;
@@ -392,69 +402,56 @@
             const resConfig = settings[resName];
             const resData = allResInfo[resName];
 
-            // Condições iniciais (preço, venda ligada)
             if (!resConfig.sell_on || resConfig.sell_rate_cap === 0) continue;
             if (resData.price > resConfig.sell_rate_cap) continue;
 
-            // =======================================================================
-            //  >>> INÍCIO DA LÓGICA MODIFICADA <<<
-            // =======================================================================
-
-            // Ponto de partida: a base de venda é o nosso alvo principal.
-            const baseAmount = resConfig.packet_size;
-            if (!baseAmount || baseAmount <= 0) continue; // Pula se não houver base de venda definida.
-
+            // Dados base
             const surplus = resData.inVillage - resConfig.sell_res_cap;
-
-            // CONDIÇÃO PRIMÁRIA: Verifica se o excedente é suficiente para cobrir a base de venda.
-            // Se o excedente for menor que a base, ele não tenta vender uma fração. Ele simplesmente passa para o próximo recurso.
-            if (surplus < baseAmount) {
-                continue;
-            }
-
-            // Checagem das restrições (espaço no mercado e capacidade do comerciante)
             const marketSpaceAvailable = resData.market_capacity - resData.market_stock;
-            if (marketSpaceAvailable <= 0) {
-                console.log(`Mercado de ${resName} está cheio. Aguardando.`);
-                continue;
+
+            if (marketSpaceAvailable <= 0) continue;
+
+            let amountToSell = 0;
+
+            // --- LÓGICA DIVIDIDA: MODO MÁXIMO vs MODO PADRÃO ---
+
+            if (resConfig.sell_max) {
+                // MODO MÁXIMO: Ignora 'packet_size'. Vende o máximo que der.
+                // Limita pelo: 1. Excedente, 2. Espaço no Mercado, 3. Total de Mercadores
+                let maxLimit = Math.min(surplus, marketSpaceAvailable, merchAvail * 1000);
+
+                // Arredonda para baixo para ser múltiplo do preço (pacote válido)
+                // Ex: Preço 64, Max 1000 -> 15 pacotes = 960 recursos.
+                if (maxLimit >= resData.price) {
+                    let packets = Math.floor(maxLimit / resData.price);
+                    amountToSell = packets * resData.price;
+                }
+            } else {
+                // MODO PADRÃO: Respeita 'packet_size' e limite de segurança de 999 (salvo se preço > 999).
+                const baseAmount = resConfig.packet_size;
+                if (!baseAmount || baseAmount <= 0 || surplus < baseAmount) continue;
+
+                let limitToUse = 999;
+                if (resData.price > 999) {
+                    limitToUse = merchAvail * 1000;
+                }
+
+                let maxSafeAmountBasedOnRate = 0;
+                if (resData.price > 0) {
+                    const numPackets = Math.floor(limitToUse / resData.price);
+                    maxSafeAmountBasedOnRate = numPackets * resData.price;
+                }
+                if (maxSafeAmountBasedOnRate <= 0) continue;
+
+                amountToSell = Math.min(baseAmount, marketSpaceAvailable, maxSafeAmountBasedOnRate);
             }
 
-            // =======================================================================
-            //  LÓGICA DE CAPACIDADE COM EXCEÇÃO PARA TAXA > 999
-            // =======================================================================
-            
-            // 1. Define o limite padrão de segurança (1 comerciante)
-            let limitToUse = 999; 
-
-            // 2. A EXCEÇÃO: Se o preço for maior que 999 (exige mais de 1 comerciante para 1 PP),
-            // nós ignoramos o limite de 999 e usamos a capacidade TOTAL dos seus comerciantes livres.
-            if (resData.price > 999) {
-                limitToUse = merchAvail * 1000;
-            }
-
-            let maxSafeAmountBasedOnRate = 0;
-            
-            if (resData.price > 0) {
-                // O cálculo agora usa a variável 'limitToUse' que se adapta à regra acima
-                const numPackets = Math.floor(limitToUse / resData.price);
-                maxSafeAmountBasedOnRate = numPackets * resData.price;
-            }
-
-            // Se o resultado for 0 (seja por falta de comerciantes ou cálculo inválido), ele pula
-            if (maxSafeAmountBasedOnRate <= 0) continue;
-
-            // CÁLCULO FINAL: O valor a vender é o MENOR entre a base, o espaço no mercado e o limite do comerciante.
-            // O 'surplus' não entra mais neste cálculo, pois já foi verificado na condição primária.
-            let amountToSell = Math.min(baseAmount, marketSpaceAvailable, maxSafeAmountBasedOnRate);
-
+            // EXECUTA SE TIVER ALGO PARA VENDER
             if (amountToSell > 0) {
-                console.log(`Alvo de venda: ${baseAmount}. Restrições: [Espaço Mercado: ${marketSpaceAvailable}, Limite Comerciante: ${maxSafeAmountBasedOnRate}]. Vendendo ${Math.floor(amountToSell)} de ${resName}.`);
+                console.log(`[${resName}] Modo Max: ${resConfig.sell_max}. Vendendo: ${Math.floor(amountToSell)}.`);
                 performTransaction('sell', resName, amountToSell);
-                return; // Sai da função após iniciar uma transação para evitar vendas múltiplas.
+                return;
             }
-            // =======================================================================
-            //  >>> FIM DA LÓGICA MODIFICADA <<<
-            // =======================================================================
         }
     }
 
@@ -473,16 +470,25 @@
         const maxStorage = parseInt(document.getElementById("storage").innerText);
         const resourceOrder = ['wood', 'stone', 'iron'];
         let startIndex = settings.global.last_buy_index || 0;
+
         for (let i = 0; i < resourceOrder.length; i++) {
             let currentIndex = (startIndex + i) % resourceOrder.length;
             const resName = resourceOrder[currentIndex];
             const resConfig = settings[resName];
             if (!resConfig.buy_on) continue;
             const resData = allResInfo[resName];
+
             let warehouseSpace = maxStorage - resData.inVillage;
             let buyableAmount = resData.market_capacity;
-            if (resData.price >= resConfig.buy_rate && buyableAmount >= resConfig.buy_min_q) {
-                let buyThis = Math.min(buyableAmount, resConfig.buy_max_q, warehouseSpace);
+
+            if (resData.price >= resConfig.buy_rate) {
+                // --- LÓGICA MODO MÁXIMO DE COMPRA ---
+                // Se Max estiver ON, define o limite como "infinito" (999999999).
+                // Se Max estiver OFF, usa o 'buy_max_q' configurado.
+                let limitPerTransaction = resConfig.buy_max ? 999999999 : resConfig.buy_max_q;
+
+                let buyThis = Math.min(buyableAmount, limitPerTransaction, warehouseSpace);
+
                 if (buyThis >= resConfig.buy_min_q) {
                     let transactionCost = Math.ceil(buyThis / resData.price);
                     if ((currentPP - transactionCost) >= settings.global.pp_stop) {
@@ -491,7 +497,7 @@
                         performTransaction('buy', resName, buyThis);
                         return;
                     } else {
-                        console.log("Orçamento excederia com esta compra. Desligando a compra automática.");
+                        console.log("Orçamento excedido. Desligando compra.");
                         document.getElementById("btnDesligarBudget").click();
                         return;
                     }
@@ -501,5 +507,7 @@
         settings.global.last_buy_index = (startIndex + 1) % resourceOrder.length;
         localStorage.setItem('marketManagerSettings_v5', JSON.stringify(settings));
     }
+
+})();
 
 })();
